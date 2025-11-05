@@ -1,192 +1,436 @@
+# Arquitectura de Migración Inteligente
 
+## El Problema: Migración de Lógica de Plataforma
 
-## Propuesta Arquitectura del Agente de migracion 
+Este proyecto aborda la migración de pipelines de datos de nuestra **Plataforma 3.0** a la nueva **Plataforma 4.0**.
 
+Los artefactos de la 3.0 consisten en una combinación de:
+* **JSONs de Azure Data Factory (ADF):** Definen el flujo de orquestación.
+* **Notebooks de Databricks:** Contienen la lógica de transformación en Python/Spark.
 
-### 1. Read_Manifest_and_Check_API (Ingesta y Pre-Validación)
-
-* **Inicio:** El flujo comienza cuando un humano invoca al agente con la ruta a un `manifest.yaml`.
-* **Acción:** Este primer nodo (una herramienta de Python) lee el manifiesto para extraer:
-    * La lista de pipelines a migrar (`pipelines_to_migrate`).
-    * Las credenciales de API (`credentials`).
-* **Lógica (Pre-flight check):** Confirma la conectividad haciendo "ping" a las APIs de GitHub ó Databricks.
-* **Actualización de Estado:** El `GraphState` se actualiza con `credentials`, `api_connectivity_ok = True`, y la lista `pipelines_to_migrate`.
-
-> **Nota sobre el Bucle:** Tras este paso, el grafo inicia un bucle. Procesará cada ítem de la lista `pipelines_to_migrate` uno por uno, ejecutando los siguientes pasos para cada pipeline.
+La Plataforma 4.0 desmantela esta estructura en favor de un conjunto de 8 o más archivos YAML especializados (como `acl.yaml`, `metadata.yaml`, `pipeline.yaml`, etc.), cuya estructura depende del framework de destino.
 
 ---
 
-### 2. Extractor_API_Client (Extracción de Datos Crudos)
+## El Desafío Central: Lógica Condicional (Hopsflow vs. Brewtiful)
 
-* **Acción:** Este nodo toma las `credentials` del estado y los datos del pipeline actual en el bucle.
-* **Lógica (Cliente de API):**
-    1.  Llama a la **API de Databricks** para obtener notebooks y configuraciones.
-    2.  Llama a la **API de GitHub** para obtener el JSON de ADF del repositorio.
-* **Lógica (LLM):** Una vez que tiene los artefactos 3.0 crudos (`raw_artifacts_3_0`), usa el LLM (vía Asimov) para:
-    * Normalizarlos al `normalized_schema_v4.json`.
-    * Detectar el `environment_type` (slv o gld).
-* **Actualización de Estado:** El `GraphState` se actualiza con `normalized_schema_v4` y `environment_type`.
-(falta actualizar arquitectura de extractor)
+La complejidad de la traducción radica en que la Plataforma 4.0 utiliza frameworks distintos basados en la capa de la Arquitectura Medallion:
+
+* **Framework Hopsflow:** Se utiliza para pipelines de capa (brz, slv).
+* **Framework Brewtiful:** Se utiliza para pipelines de capa Oro (gld).
+
+Por lo tanto, el sistema de migración debe primero clasificar el pipeline 3.0 y luego generar un conjunto de artefactos completamente diferente basado en esa clasificación.
 
 ---
 
-### 3. Enrutador Condicional (La Bifurcación)
+## La Solución: Una Arquitectura de Agente Robusta (LangGraph)
 
-* **Acción:** Un "Edge Condicional" (enrutador lógico) lee el `environment_type` del estado.
-* **Lógica:** Decide qué conjunto de *Translators* ejecutar en paralelo en el siguiente paso.
-(Falta agregar actualizaciones post revision)
+Para automatizar esta traducción compleja, se diseñó un agente basado en **LangGraph**. Esta arquitectura permite construir un flujo de trabajo por pasos, condicional, paralelizable y robusto.
+
+---
+#### Para comprender la estructura de la arquitectura, es fundamental definir los tres tipos de nodos que conforman esta solución.
+## Tipos de Nodos en la Arquitectura
+
+La estructura se compone de tres tipos principales de nodos:
+
+### 1. Nodo-Herramienta (El Trabajador o Enrutador)
+**¿Tiene LLM?** No.
+**¿Tiene Tools?** No. El nodo *es* la herramienta (una sola función de Python).
+**Propósito:** Ejecutar tareas deterministas (mecánicas) o lógicas (enrutamiento if/else). No "piensa", solo "hace".
+* **Ejemplos en nuestra arquitectura:**
+    * `Read_Manifest_and_Check_API`
+    * `Framework_Loader`
+    * `Enrutador_de_Translators`
+    * `Validator_Tool`
+    * `Check Validation`
+    * `Check Human Decision`
+    * `Generator`
+    * `Ruff Format`
+
+### 2. Nodo-Agente Simple (El Especialista)
+**¿Tiene LLM?** Sí.
+**¿Tiene Tools?** No.
+**Propósito:** Ejecutar una tarea de "pensamiento" o traducción altamente especializada. Su inteligencia está 100% enfocada en su prompt específico. No decide entre herramientas, solo ejecuta su única tarea de IA.
+* **Ejemplos en nuestra arquitectura:**
+    * `Schema_Normalizer`
+    * Todos los 8+ Translators (ej. `ACLTranslator`, `PipelineTranslator`, etc.)
+    * `CorrectorAgent`
+    * `ReporterLogger`
+
+### 3. Nodo-Agente con Herramientas (El Gerente)
+**¿Tiene LLM?** Sí.
+**¿Tiene Tools?** Sí. Se le proporciona un "cinturón de herramientas" (múltiples funciones) que puede usar.
+**Propósito:** Ejecutar tareas dinámicas o exploratorias. El LLM (el "Gerente") decide qué herramientas usar y en qué orden para cumplir un objetivo complejo.
+* **Ejemplos en nuestra arquitectura:**
+    * `Data_Fetcher` (que decide si usar la `github_api_tool` o la `databricks_api_tool`)
 
 ---
 
-### 4. Translators (El "Fan-Out" Paralelo)
+## El Flujo Completo de la Arquitectura
 
-El grafo ejecuta múltiples nodos *Translator* simultáneamente ("fan-out").
-
-* **Si es `slv` (Hopsflow):**
-    * `TransformationsTranslator`
-* **Si es `gld` (Brewtiful):**
-    * `NotebookTranslator`
-* **Comunes (ejecutados en ambos casos):**
-    * `ACLTranslator`
-    * `MetadataTranslator`
-    * `QualityTranslator`
-    * `SyncTranslator`
-    * `PipelineTranslator`
-    * `ObservabilityTranslator` 
-* **Actualización de Estado:** A medida que cada traductor termina, "llena" su campo correspondiente en el `GraphState` (ej. `state['acl_yaml'] = "..."`).
-
-Para -> `NotebookTranslator` se realiza un --> `Ruff Format (tool)` antes de pasar al validator
-
----
-
-### 5. Validator_Tool (La Validación Específica)
-
-* **Acción (Sincronización):** Este nodo actúa como una barrera. **Espera a que todos los traductores del Paso 4 terminen.**
-* **Lógica (Herramienta):** Este nodo **no** es un LLM. Es una herramienta de Python que ejecuta el validador existente sobre los artefactos generados.
-* **Comando Específico:** `(agregar comando)`
-* **Actualización de Estado:** Captura la salida de texto (stdout/stderr) del comando y la guarda en `state['validator_output']`.
-
----
-
-### 6. Check Validation (El Bucle de Auto-Corrección) 
-
-* **Acción:** Un "Edge Condicional" (enrutador) lee el `state['validator_output']`.
-
-* **Lógica (Caso A - Fallo):**
-    1.  Si `validator_output` contiene errores, el enrutador establece `validation_passes = False` e incrementa `retry_count`.
-    2.  El flujo se desvía al **CorrectorAgent** (un LLM).
-    3.  El *CorrectorAgent* recibe los errores (`validator_output`) y los artefactos fallidos.
-    4.  El agente corrige los artefactos en el estado y **el flujo regresa al Paso 5 (Validator_Tool)** para una nueva validación. (Maximo 3 iteraciones)
-
-* **Lógica (Caso B - Éxito):**
-    1.  Si `validator_output` no muestra errores, el enrutador establece `validation_passes = True`.
-    2.  El flujo rompe el bucle de corrección y continúa.
-
----
-
-### 7. Human_Approval_Node (Parada Obligatoria) (Solo para periodo de prueba)
-
-* **Acción:** El flujo solo llega aquí después de una validación exitosa (`validation_passes == True`).
-* **Lógica:** El grafo **PAUSA** su ejecución. Esto es un requisito de negocio explícito para la validación humana.
-* **Interacción:** El sistema espera hasta que un humano revise los artefactos generados y envíe una decisión ("APPROVE" o "REJECT") que actualiza `state['human_approval_decision']`.
-
----
-
-### 8. Check Human Decision (Aprobación Final)
-
-* **Acción:** El grafo se reanuda cuando `human_approval_decision` se llena y lee la decisión.
-* **Lógica (REJECT):** Si es "REJECT", el flujo se desvía a un nodo `END (Rejected)` y el proceso para *ese* pipeline termina.
-* **Lógica (APPROVE):** Si es "APPROVE", el flujo continúa hacia el empaquetado final.
-
----
-
-### 9. ReporterLogger y Generator (Reporte y Empaquetado) 📦
-
-* **Acción (ReporterLogger):** Genera el `migration_summary.md`, documentando todo el proceso (incluyendo la validación y la aprobación humana).
-* **Acción (Generator):** Recolecta todos los artefactos aprobados (.yaml, notebooks) y reportes (.md, .json) del estado.
-* **Lógica:** Realiza un Push al repo correspondiente al caso
-* **Actualización de Estado:** El `GraphState` se actualiza con la ruta en `migration_package_path`.
-
----
-
-### 10. END (Package Ready)
-
-* El flujo para este pipeline individual termina.
-* El grafo principal **vuelve al Paso 1** y comienza a procesar el siguiente ítem de la lista `pipelines_to_migrate` del manifiesto, repitiendo todo el proceso.
-
-### Diagrama 
+Este flujo describe el procesamiento de un solo pipeline de la lista contenida en el manifiesto.
 
 ```mermaid
 
-
 flowchart TD
-    subgraph "FlujoDeMigracion"
+    subgraph MigrationFlow
+        
+        %% --- 1. Start and Pre-Validation ---
+        A["START - manifest.yaml"]:::flow --> B["1. Read_Manifest_and_Check_API, Reads manifest and credentials. Validates API connectivity"]:::tool
 
-        %% --- 1. Inicio y Pre-Validacion ---
-        A([START - manifest.yaml]):::flow --> B["1. Read_Manifest_and_Check_API - Lee manifiesto y credenciales. Valida conectividad API"]:::agent
+        %% --- 2. Extraction (Split into 2 Nodes) ---
+        subgraph C_Fetcher ["2 Data_Fetcher_Agent_with_Tools"]
+            direction TB
 
-        %% --- 2. Extraccion y Enrutamiento ---
-        B --> C["2. Extractor_API_Client - Llama a APIs GitHub / Databricks para obtener assets 3.0"]:::agent
-        C --> D{"3. Enrutador Condicional - Detecta slv, bronce o gld del asset"}:::tool
-
-        %% --- 3. Ramas Paralelas (Fan-Out) ---
-
-        %% Ramal SLV / BRONCE (Hopsflow)
-        subgraph Paralelo_SLV
-            direction LR
-            P2[TransformationsTranslator]:::tool
+            N1_LLM["🧠 LLM (Manager) Decides which tools to use"]
+            subgraph Tools
+                direction LR
+                T1[" github_api_tool"]:::tool
+                T2[" databricks_api_tool"]:::tool
+            end
+            N1_LLM --> T1
+            N1_LLM --> T2
         end
-        D -- slv / bronce --> P2
+        B --> C_Fetcher
 
-        %% Ramal GLD (Brewtiful)
-        D -- gld --> G1[NotebookTranslator]:::tool
-        G1 --> RF["Ruff Format (TOOL)"]:::tool
+        %% Node 2b: The Normalizer
+        C_Normalizer["3. Schema_Normalizer -----(Simple Agent) ----------🧠 LLM (Specialist) Translates and Classifies"]:::agent
+        C_Fetcher --> C_Normalizer
 
-        %% Ramal Comun (Siempre se ejecuta) - incluye P1
-        subgraph Paralelo_Comun
-            direction LR
-            P1[PipelineTranslator]:::tool
-            C1[ACLTranslator]:::tool
-            C2[MetadataTranslator]:::tool
-            C3[QualityTranslator]:::tool
-            C4[SyncTranslator]:::tool
-            C5[ObservabilityTranslator]:::tool
-        end
+        %% --- Routing ---
+        D_Loader["4. Framework_Loader ------(Tool: Loads Hopsflow/Brewtiful templates)"]:::tool
+        C_Normalizer --> D_Loader
+        
+        D_Router["5.Translator_Router --- (Tool: Lists parallel nodes based on bronze/slv/gld)"]:::tool
+        D_Loader --> D_Router
 
-        D -- all --> P1
+        %% --- Parallel Branches ---
+        P2["TransformationsTranslator"]:::agent
+        D_Router -->|"slv / brz"| P2
 
-        D -- gld --> C1 & C2 & C3 & C4 & C5
-        D -- slv / bronce --> C1 & C2 & C3 & C4 & C5
+        G1["NotebookTranslator"]:::agent
+        RF["Ruff Format (TOOL)"]:::tool
+        D_Router -->|"gld"| G1
+        G1 --> RF
 
-        %% --- 4. Validacion y Bucle de Correccion ---
-        P1 --> V["4. Validator_Tool - Ejecuta engineeringstore --validate-dags"]:::tool
+        P1["PipelineTranslator"]:::agent
+        C1["ACLTranslator"]:::agent
+        C2["MetadataTranslator"]:::agent
+        C3["QualityTranslator"]:::agent
+        C4["SyncTranslator"]:::agent
+        C5["ObservabilityTranslator"]:::agent
+
+        D_Router -->|"slv / brz/ gld"| P1
+        D_Router -->|"slv / brz/ gld"| C1
+        D_Router -->|"slv / brz/ gld"| C2
+        D_Router -->|"slv / brz/ gld"| C3
+        D_Router -->|"slv / brz/ gld"| C4
+        D_Router -->|"slv / brz/ gld"| C5
+
+        %% --- 5. Validation and Correction Loop ---
+        V["6 Validator_Tool, Runs 'engineeringstore --validate-dags'"]:::tool
+        P1 --> V
+        C1 --> V
+        C2 --> V
+        C3 --> V
+        C4 --> V
+        C5 --> V
         P2 --> V
         RF --> V
-        C1 & C2 & C3 & C4 & C5 --> V
 
-        V --> CV{"5. Check Validation - Reporte de engineeringstore OK?"}:::tool
-        CV -- FAIL --> COR["6. CorrectorAgent - Usa output de engineeringstore para corregir artefactos (MAX 3 iter.)"]:::agent
+        CV["7 Check Validation, 'engineeringstore' report OK?"]:::tool
+        V --> CV
+        
+        COR["8 CorrectorAgent, Uses 'engineeringstore' output to fix artifacts (MAX 3 iter.)"]:::agent
+        CV -->|"FAIL"| COR
         COR --> V
 
-        %% --- 5. Aprobacion Humana (Obligatoria) ---
-        CV -- PASS --> HITL["7. Human_Approval_Node - PAUSA: espera aprobación humana final (Solo para Periodo de prueba)"]:::human
+        %% --- 6. Human Approval ---
+        HITL["9 Human_Approval_Node PAUSE: awaits final human approval"]:::human
+        CV -->|"PASS"| HITL
 
-        %% --- 6. Flujo Final (Reporte y Push) ---
-        HITL --> CH{"8. Check Human Decision"}:::human
-        CH -- APPROVE --> R["9. ReporterLogger - Escribe migration_summary.md"]:::tool
-        R --> GEN["10. Generator - Realiza push al repositorio objetivo"]:::tool
-        GEN --> Z([END - Package Ready]):::flow
+        %% --- 7. Final Flow ---
+        CH["10 Check Human Decision"]:::human
+        HITL --> CH
+        
+        R["11. ReporterLogger Writes migration_summary.md"]:::agent
+        CH -->|"APPROVE"| R
+        
+        GEN["12. Generator Pushes to target repository"]:::tool
+        R --> GEN
+        
+        Z["END - Package Ready"]:::flow
+        GEN --> Z
 
-        %% --- 7. Salida por Rechazo ---
-        CH -- REJECT --> ZR([END - Rejected by Human]):::flow
+        %% --- 8. Exit on Rejection ---
+        ZR["END - Rejected by Human"]:::flow
+        CH -->|"REJECT"| ZR
     end
 
-    %% --- Estilos de colores ---
-    classDef agent fill:#9fd5ff,stroke:#004d80,stroke-width:1px,color:#000;
+    %% --- STYLES ---
     classDef tool fill:#fff3b0,stroke:#806c00,stroke-width:1px,color:#000;
+    classDef agent fill:#9fd5ff,stroke:#004d80,stroke-width:1px,color:#000;
+    classDef agent_with_tools fill:#ffd8b1,stroke:#a15800,stroke-width:1px,color:#000;
     classDef human fill:#c8f7c5,stroke:#2b8000,stroke-width:1px,color:#000;
     classDef flow fill:#e0e0e0,stroke:#888,stroke-width:1px,color:#000;
 
 ```
 
+### Paso 1: Read_Manifest_and_Check_API (Ingesta y Pre-Validación) (Opcional)
+* **Tipo de Nodo:** Nodo-Herramienta (Puro Python) | **:::tool**
+* **Inicio:** El flujo comienza cuando un humano invoca al agente con la ruta a un `manifest.yaml`.
+* **Acción:** Este nodo (una función de Python) lee el `manifest.yaml` para extraer:
+    * La lista de pipelines a migrar (`pipelines_to_migrate`).
+    * Las credenciales de API (`credentials`).
+* **Lógica:** Realiza un "pre-flight check" usando las credenciales para hacer "ping" a las APIs de GitHub y Databricks y confirmar la conectividad.
+* **Actualización de Estado:** El `GraphState` se actualiza con `credentials`, `api_connectivity_ok = True`, y la lista `pipelines_to_migrate`. El orquestador externo ahora iterará sobre esta lista.
+
+### Paso 2: Data_Fetcher
+* **Tipo de Nodo:** Nodo-Agente con Herramientas (Gerente) | **:::agent_with_tools**
+* **Acción:** Este nodo toma las `credentials` y el `current_pipeline_data` (el primer ítem del manifiesto) del estado.
+* **Lógica (LLM):** El LLM recibe un prompt para "recolectar archivos". Para hacerlo, decide qué herramientas de su cinturón usar:
+    * *Ejemplo:*
+    * Llama a `github_api_tool` para obtener el JSON de ADF.
+    * Llama a `databricks_api_tool` para obtener el notebook.
+* **Actualización de Estado:** Guarda los artefactos 3.0 crudos en `state['raw_artifacts_3_0']`.
+
+### Paso 3: Schema_Normalizer
+* **Tipo de Nodo:** Nodo-Agente Simple (Especialista) | **:::agent**
+* **Acción:** Este nodo se activa después del `Data_Fetcher`. Toma los `raw_artifacts_3_0` del estado.
+* **Lógica (LLM):** Llama al LLM (Especialista) con un prompt enfocado en dos tareas:
+    1.  **Traducir:** Analizar los artefactos crudos y generar el `normalized_schema_v4.json`.
+    2.  **Clasificar:** identificar `environment_type` ('slv' o 'gld'). -> (Este puede ser una función de python)
+* **Actualización de Estado:** Guarda `normalized_schema_v4` y `environment_type` en el estado.
+
+```mermaid
+
+graph TD
+    subgraph "Extraction Flow (2 Steps)"
+        direction LR
+        
+        %% --- Node 1: Agent with Tools ---
+        subgraph A ["2. Data_Fetcher (Node-Agent with Tools)"]
+            direction TB
+            
+            %% The "brain" of the agent
+            N1_LLM["🧠 LLM (Manager)<br/>Decides which tools to use"]
+            
+            %% The tools the brain can use
+            subgraph "Tools"
+                direction LR
+                T1[" github_api_tool"]
+                T2[" databricks_api_tool"]
+                T3[" ... "]              
+            end
+            
+            %% The brain uses the tools
+            N1_LLM --> T1
+            N1_LLM --> T2
+            N1_LLM --> T3            
+        end
+
+        %% --- Node 2: Simple Agent ---
+        B["3 Schema_Normalizer<br/>(Node-Simple Agent)<br/>🧠 LLM (Specialist)<br/>Translates and Classifies"]
+
+        %% --- The Main Flow ---
+        A --> B
+    end
+
+```
+
+### Paso 4: Framework_Loader
+* **Tipo de Nodo:** Nodo-Herramienta (Puro Python) | **:::tool**
+* **Acción:** Este nodo lee el `environment_type` del estado.
+* **Lógica:** Es un `if/else` que "hace checkout" de las plantillas correctas. Si es 'slv', carga los template files de Hopsflow. Si es 'gld', carga los de Brewtiful.
+* **Actualización de Estado:** Guarda las plantillas de texto crudo (ej. `state['pipeline_template']`) en el estado.
+* **Comandos:**
+    ```bash
+    engineeringstore transformation --create-template-files (glds)
+    engineeringstore ingestion --create-template-files (brz, slv)
+    ```
+
+### Paso 5: Enrutador_de_Translators
+* **Tipo de Nodo:** Nodo-Herramienta (Enrutador Condicional) | **:::tool**
+* **Acción:** Lee el `environment_type` del estado.
+* **Lógica:** Es un `if/else` que define el plan de ejecución paralelo. Define una lista de traductores comunes (como `PipelineTranslator`, `ACLTranslator`, etc.) y añade los traductores condicionales (`TransformationsTranslator` si es 'slv', `NotebookTranslator` si es 'gld').
+* **Salida:** Retorna una lista de strings (ej. `["PipelineTranslator", "ACLTranslator", "NotebookTranslator"...]`) que LangGraph usará para el siguiente paso.
+
+```mermaid
+
+graph TD
+    subgraph "Extraction and Routing Flow"
+        A["...Schema_Normalizer"] --> B["4 Framework_Loader<br/>(Tool: Loads Hopsflow/Brewtiful templates)"]
+        B --> C["5 Translator_Router<br/>(Tool: Lists parallel nodes)"]
+        C --> D["Parallel: Translators..."]
+    end
+
+    %% Color Styles
+    style B fill:#fff3b0,stroke:#806c00,stroke-width:1px,color:#000;
+    style C fill:#fff3b0,stroke:#806c00,stroke-width:1px,color:#000;
+
+```
+
+### Paso 6: Translators (El "Fan-Out" Paralelo)
+* **Tipo de Nodo:** Nodos-Agente Simples (Especialistas) | **:::agent**
+* **Acción:** LangGraph toma la lista del enrutador y ejecuta todos esos nodos `Translator` en **paralelo**.
+* **Lógica (LLM):** Cada nodo `Translator` (ej. `ACLTranslator`, `MetadataTranslator`, etc.) es un "Especialista" que toma el `normalized_schema_v4` y su plantilla correspondiente (cargada en el Paso 4) y genera el archivo YAML final.
+* **Actualización de Estado:** Cada nodo escribe en su propio campo del estado (ej. `state['acl_yaml'] = "..."`).
+
+### Paso 7: Ruff Format
+* **Tipo de Nodo:** Nodo-Herramienta (Puro Python) | **:::tool**
+* **Acción:** Este nodo se ejecuta solo en el branch 'gld', después del `NotebookTranslator`.
+* **Lógica:** Es una función simple que toma el código del `generated_notebooks` y lo formatea usando la herramienta `ruff` para asegurar la calidad del código.
+* **Actualización de Estado:** Sobrescribe `state['generated_notebooks']` con el código formateado.
+
+### Paso 8: Validator_Tool (Validación Específica)
+* **Tipo de Nodo:** Nodo-Herramienta (Trabajador) | **:::tool**
+* **Acción (Sincronización):** Actúa como una barrera **"Fan-In"**. Espera a que todos los traductores (Paso 6) y el formateador (Paso 7, si se ejecutó) terminen.
+* **Lógica (Herramienta):** Ejecuta el comando `engineeringstore --validate-dags` sobre los artefactos generados.
+* **Actualización de Estado:** Captura la salida de texto (stdout/stderr) y la guarda en `state['validator_output']`.
+
+### Paso 9: Check Validation (Bucle de Auto-Corrección)
+* **Tipo de Nodo:** Nodo-Herramienta (Enrutador Condicional) | **:::tool**
+* **Acción:** Lee el `state['validator_output']` y el `state['retry_count']`.
+* **Lógica (Fallo):** Si el `validator_output` contiene errores y `retry_count` es menor a 3:
+    * Incrementa `retry_count` y establece `validation_passes = False`.
+    * Desvía el flujo al `CorrectorAgent`.
+* **Lógica (Éxito):** Si no hay errores:
+    * Establece `validation_passes = True`.
+    * Desvía el flujo al `Human_Approval_Node`.
+
+### Paso 10: CorrectorAgent (El Corrector)
+* **Tipo de Nodo:** Nodo-Agente Simple (Especialista) | **:::agent**
+* **Acción:** Se activa en el bucle "FAIL".
+* **Lógica (LLM):** Recibe un prompt muy específico que contiene el error (`validator_output`) y los artefactos fallidos del estado. Genera un nuevo conjunto de artefactos corregidos.
+* **Actualización de Estado:** Sobrescribe los artefactos en el estado y el flujo vuelve al **Paso 8 (Validator_Tool)** para una nueva validación.
+
+### Paso 11: Human_Approval_Node (Parada Obligatoria) (Solo en fase de prueba)
+* **Tipo de Nodo:** Nodo de Pausa (Humano) | **:::human**
+* **Acción:** Se activa solo después de una validación exitosa ("PASS").
+* **Lógica:** **PAUSA** la ejecución del grafo, cumpliendo el requisito de que "un humano tiene que validar el resultado final". (Esto puede ser solo para el período de prueba).
+* **Interacción:** El sistema espera a que un humano actualice `state['human_approval_decision']` con "APPROVE" o "REJECT".
+
+### Paso 12: Check Human Decision (Aprobación Final)
+* **Tipo de Nodo:** Nodo-Herramienta (Enrutador Condicional) | **:::human**
+* **Acción:** Se reanuda cuando `human_approval_decision` se llena.
+* **Lógica:** Lee la decisión.
+    * Si es "APPROVE", retorna la ruta "APPROVE".
+    * Si es "REJECT", retorna la ruta "REJECT".
+
+### Paso 13: ReporterLogger (El Auditor)
+* **Tipo de Nodo:** Nodo-Agente Simple (Especialista) | **:::agent**
+* **Acción:** Se activa solo en el flujo "APPROVE".
+* **Lógica (LLM):** Genera el `migration_summary.md` documentando todo el proceso, la validación exitosa y la aprobación humana.
+* **Actualización de Estado:** Guarda el .md en `state['migration_summary_md']`.
+
+### Paso 14: Generator (El Desplegador)
+* **Tipo de Nodo:** Nodo-Herramienta (Trabajador) | **:::tool**
+* **Acción:** Se activa después del `ReporterLogger`.
+* **Lógica:** Recolecta todos los artefactos aprobados (.yaml, notebooks) y el reporte (.md) del estado. Usando las `credentials` del estado, realiza un `git push` para subir estos archivos al repositorio 4.0 objetivo.
+* **Salida:** El flujo termina en `END (Package Ready)`.
+
+### Paso 15: Bucle del Manifiesto
+* **Acción:** Una vez que el flujo termina (ya sea en `END (Package Ready)` o `END (Rejected by Human)`), el orquestador externo vuelve al **Paso 2** para procesar el siguiente ítem en la lista `pipelines_to_migrate` del manifiesto, repitiendo todo el proceso.
+
+---
+
+## Propuesta de State (GraphState)
+
+El `GraphState` es el único objeto de datos y la fuente central de verdad para nuestro flujo de migración.
+
+Es un diccionario de Python que contiene toda la información de un pipeline mientras se procesa: entradas, credenciales, artefactos intermedios (como el schema), todos los YAMLs generados, los reportes de validación y las decisiones humanas.
+
+En este proyecto, el `GraphState` nos permite:
+
+* **Comunicación:** Es la forma en que los nodos se pasan información (ej. el Extractor le pasa el schema a los Translators).
+* **Control de Flujo:** Permite a los enrutadores tomar decisiones lógicas al leer su contenido (ej. "si `environment_type` es 'gld', ir a `NotebookTranslator`").
+* **Paralelismo:** Habilita que los 8 Translators se ejecuten al mismo tiempo, ya que cada uno escribe en su propio campo aislado dentro del estado.
+* **Robustez (Bucles):** Es lo que hace posible el bucle de auto-corrección, al persistir el `validator_output` y el `retry_count` para que el `CorrectorAgent` sepa qué arreglar.
+* **Interacción Humana:** Permite que el grafo se pause (esperando que se llene `human_approval_decision`) y se reanude más tarde, habilitando la validación humana.
+
+```python
+
+
+from typing import TypedDict, List, Dict, Any, Optional
+
+class MigrationGraphState(TypedDict):
+    """
+    Este es el 'Estado' central que fluye a través del grafo de migración.
+    Refleja la arquitectura de varios pasos para la extracción y el enrutamiento.
+    """
+
+    # --- SECCIÓN 1: ENTRADAS INICIALES Y MANIFIESTO ---
+    # Llenado al invocar el grafo
+    
+    manifest_path: str  # La ruta al 'manifest.yaml' que define el lote
+    
+    # --- SECCIÓN 2: ESTADO DEL LOTE Y PRE-VALIDACIÓN ---
+    # Llenado por el nodo 'Read_Manifest_and_Check_API'
+    
+    credentials: Optional[Dict[str, str]]    # Credenciales de API (GitHub, Databricks)
+    api_connectivity_ok: bool                # Resultado del 'pre-flight check'
+    pipelines_to_migrate: List[Dict[str, Any]] # La lista de trabajo del manifiesto
+    
+    # El pipeline individual que se está procesando actualmente en el bucle
+    current_pipeline_data: Optional[Dict[str, Any]] 
+
+    
+    # --- SECCIÓN 3: ESTADO DE EXTRACCIÓN (EN 2 PASOS) ---
+    # Llenado por el 'Data_Fetcher' (Paso 2a)
+    raw_artifacts_3_0: Optional[Dict[str, Any]] # {"adf_json": "...", "notebook_code": "..."}
+    
+    # Llenado por el 'Schema_Normalizer' (Paso 2b)
+    normalized_schema_v4: Optional[Dict[str, Any]] # El JSON limpio, fuente de verdad
+    environment_type: Optional[str]                # 'slv' o 'gld'
+
+    
+    # --- SECCIÓN 4: PLANTILLAS DE FRAMEWORK (HOPSFLOW/BREWTIFUL) ---
+    # Llenado por el 'Framework_Loader' (Paso 3a)
+    
+    pipeline_template: Optional[str]         # El texto de la plantilla 'hopsflow_pipeline_template.yaml'
+    transform_template: Optional[str]        # El texto de la plantilla 'hopsflow_transformations_template.yaml'
+    notebook_template: Optional[str]         # El texto de la plantilla 'brewtiful_notebook_template.py'
+
+    
+    # --- SECCIÓN 5: ARTEFACTOS DE TRADUCCIÓN (SALIDAS) ---
+    # Llenados en paralelo por los nodos 'Translator' (Paso 6)
+
+    # Comunes
+    acl_yaml: Optional[str]              #
+    metadata_yaml: Optional[str]         #
+    quality_yaml: Optional[str]          #
+    sync_yaml: Optional[str]             #
+    observability_yaml: Optional[str]    #
+    pipeline_yaml: Optional[str]         #
+
+    # Condicional 'slv'
+    transformations_yaml: Optional[str]  #
+
+    # Condicional 'gld' (salida de NotebookTranslator + Ruff)
+    generated_notebooks: Optional[List[str]] #
+
+    
+    # --- SECCIÓN 6: VALIDACIÓN Y BUCLE DE CORRECCIÓN ---
+    # Llenado por 'Validator_Tool', 'Check Validation' y 'CorrectorAgent'
+    
+    validator_output: Optional[str]      # El stdout/stderr crudo de 'engineeringstore --validate-dags'
+    validation_passes: bool              # True/False, basado en el análisis del 'validator_output'
+    retry_count: int                     # Contador para el bucle de corrección (inicia en 0)
+
+
+    # --- SECCIÓN 7: APROBACIÓN HUMANA ---
+    # Llenado por el 'Human_Approval_Node'
+    
+    human_approval_decision: Optional[str] # La decisión del humano ('APPROVE' o 'REJECT')
+
+
+    # --- SECCIÓN 8: SALIDAS FINALES Y AUDITORÍA ---
+    # Llenado por 'ReporterLogger' y 'Generator'
+    
+    migration_summary_md: Optional[str]  # El resumen de auditoría .md
+    
+    # El resultado del push final al repositorio 4.0
+    push_status: Optional[str]           # (ej. "Éxito: commit 7a8b9c1" o "Fallo: ...")
+
+```
 
