@@ -1,0 +1,156 @@
+[project]
+name = "brewbridge"
+version = "0.1.0"
+description = "BrewBridge AI is an intelligent agentic framework that automates data pipeline migrations from legacy platforms (e.g., Data Platform 3.0, COBOS) to the BrewDat 4.0 ecosystem."
+authors = "Brewdat MAZ Platform Team"
+requires-python = ">=3.10, <3.13"
+readme = "README.md"
+dependencies = [
+    "langgraph==0.6.8",
+    "langchain-openai==0.3.33",
+    "mlflow==3.1.4",
+    "python-dotenv==1.1.1",
+    "gitpython>=3.1.42,<4",
+    "pyyaml>=6.0.1,<7",
+    "rich>=13.9.1,<14",
+    "tqdm>=4.66.3,<5",
+    "pandas>=2.2.2,<3",
+    "requests>=2.32.3,<3",
+    "pydantic>=2.10.3,<3",
+    "mypy>=1.10.0,<2",
+    "ruff>=0.6.5,<1",
+    "pytest>=8.0.0,<9",
+    "orjson>=3.10.12,<4",
+    "typing-extensions>=4.12.2,<5",
+]
+
+[project.urls]
+Repository = "https://github.com/BrewDat/brewbridge-ai"
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=3.7.1,<4",
+    "pytest-cov>=4.1.0,<5",
+    "pytest-xdist>=3.5.0,<4",
+    "pytest-mock>=3.12.0,<4",
+    "commitizen>=3.15.0,<4",
+    "sphinx==7.3.7",
+    "sphinx-rtd-theme>=2.0.0,<3",
+    "myst-parser>=3.0.1,<4",
+    "sphinx-multiversion==0.2.4",
+]
+
+[project.scripts]
+brewbridge = "brewbridge.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0,<9",
+    "ruff>=0.6.5,<1",
+    "mypy>=1.10.0,<2",
+]
+docs = [
+    "sphinx==7.3.7",
+    "myst-parser>=3.0.1,<4",
+    "sphinx-rtd-theme>=2.0.0,<3",
+]
+
+[tool.uv]
+default-groups = ["dev", "docs"]
+
+[[tool.uv.index]]
+name = "jfrog"
+url = "https://abinbev.jfrog.io/artifactory/api/pypi/brewdatmlp-virtual-pypi/simple"
+
+[tool.uv.sources]
+engineeringstore = { index = "jfrog" }
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+brewbridge = ["**/*.*"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+bump_message = "bump: version $current_version → $new_version [skip ci]"
+version_files = [
+    "pyproject.toml:version",
+    "src/brewbridge/__init__.py:__version__",
+]
+
+[tool.ruff]
+indent-width = 4
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.format]
+exclude = [
+    "examples",
+    ".github",
+    ".git",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".env",
+    ".tox",
+    ".venv",
+    "inputs",
+    "cache",
+]
+indent-style = "space"
+line-ending = "auto"
+quote-style = "double"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+exclude = [".env", ".tox", ".venv"]
+extend-select = [
+    "C90", # mccabe
+    "D",   # pydocstyle
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "S",   # bandit
+    "W",   # pycodestyle warnings
+]
+ignore = [
+    "D100",
+    "D107",
+    "D202",
+    "D203",
+    "D205",
+    "D212",
+    "D213",
+    "D301",
+    "C901",
+    "E203",
+    "E501",
+    "E711",
+    "E712",
+    "S113",
+    "S402",
+    "S506",
+    "S608",
+    "W605",
+]
+
+[tool.ruff.lint.isort]
+relative-imports-order = "furthest-to-closest"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
