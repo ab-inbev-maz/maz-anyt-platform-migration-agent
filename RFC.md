@@ -71,102 +71,86 @@ La estructura se compone de tres tipos principales de nodos:
 Este flujo describe el procesamiento de un solo pipeline de la lista contenida en el manifiesto.
 
 ```mermaid
-
-flowchart TD
-    subgraph MigrationFlow
-        
-        %% --- 1. Inicio y Pre-Validacion ---
-        A["START - manifest.yaml"]:::flow --> B["1. Read_Manifest_and_Check_API Tool: Lee manifiesto y pings a APIs (GitHub/DataFactory)"]:::tool
-
-        %% --- 2. crea Framework (Nuevo Orden) ---
-        C["2. Framework_creator Tool: Parsea nombre (brz/gld) y crea plantillas Hopsflow/Brewtiful"]:::tool
-        B --> C
-
-        %% --- 3. Extractor (Simplificado a Tool) ---
-        D["3. Extractor_Tool Tool: Lee repos de GitHub y DataFactory para obtener assets 3.0"]:::tool
-        C --> D
-
-        %% --- 4. Normalizador (LLM) ---
-        E["4. Schema_Normalizer Agente Simple: 🧠 LLM\nTraduce assets 3.0 a schema_v4.json"]:::agent
-        D --> E
-        
-        %% --- 5. Enrutador ---
-        F{"5. Enrutador_de_Translators Tool: Lista los nodos\nparalelos segun brz/gld"}:::tool
-        E --> F
-
-        %% --- 6. Ramas Paralelas (Fan-Out) ---
-        %% Ramal SLV / BRONCE (Hopsflow)
-        P2["TransformationsTranslator"]:::agent
-        F -->|"slv / brz"| P2
-
-        %% Ramal GLD (Brewtiful)
-        G1["NotebookTranslator"]:::agent
-        RF["Ruff Format (TOOL)"]:::tool
-        F -->|"gld"| G1
-        G1 --> RF
-
-        %% Ramal Comun (Siempre se ejecuta)
-        P1["PipelineTranslator (Hopsflow/brewtiful)"]:::agent
-        C1["ACLTranslator"]:::agent
-        C2["MetadataTranslator"]:::agent
-        C3["QualityTranslator"]:::agent
-        C4["SyncTranslator"]:::agent
-        C5["ObservabilityTranslator"]:::agent
-
-        %% --- Corrección de lógica: P1 (Pipeline) NO es común, es slv/brz
-        F -->|"slv / brz / gld"| P1
-        F -->|"slv / brz / gld"| C1
-        F -->|"slv / brz / gld"| C2
-        F -->|"slv / brz / gld"| C3
-        F -->|"slv / brz / gld"| C4
-        F -->|"slv / brz / gld"| C5
-
-        %% --- 7. Validacion y Bucle de Correccion ---
-        V["7. Validator_Tool\nTool: Ejecuta 'engineeringstore --validate-dags'"]:::tool
-        P1 --> V
-        C1 --> V
-        C2 --> V
-        C3 --> V
-        C4 --> V
-        C5 --> V
-        P2 --> V
-        RF --> V
-
-        CV{"8. Check Validation\nTool: Reporte de 'engineeringstore' OK?"}:::tool
-        V --> CV
-        
-        COR["9. CorrectorAgent\nAgente Simple: 🧠 LLM\nUsa output para corregir (MAX 3 iter.)"]:::agent
-        CV -->|"FAIL"| COR
-        COR --> V
-
-        %% --- 8. Aprobacion Humana (Obligatoria) ---
-        HITL["10. Human_Approval_Node\nPAUSA: espera aprobación humana final"]:::human
-        CV -->|"PASS"| HITL
-
-        %% --- 9. Flujo Final (Reporte y Push) ---
-        CH{"11. Check Human Decision"}:::human
-        HITL --> CH
-        
-        R["12. ReporterLogger\nAgente Simple: 🧠 LLM\nEscribe migration_summary.md"]:::agent
-        CH -->|"APPROVE"| R
-        
-        GEN["13. Generator\nTool: Realiza push al\nrepositorio objetivo"]:::tool
-        R --> GEN
-        
-        Z(["END - Package Ready"]):::flow
-        GEN --> Z
-
-        %% --- 10. Salida por Rechazo ---
-        ZR(["END - Rejected by Human"]):::flow
-        CH -->|"REJECT"| ZR
-    end
-
-    %% --- STYLES ---
-    classDef tool fill:#fff3b0,stroke:#806c00,stroke-width:1px,color:#000;
-    classDef agent fill:#9fd5ff,stroke:#004d80,stroke-width:1px,color:#000;
-    classDef agent_with_tools fill:#ffd8b1,stroke:#a15800,stroke-width:1px,color:#000;
-    classDef human fill:#c8f7c5,stroke:#2b8000,stroke-width:1px,color:#000;
-    classDef flow fill:#e0e0e0,stroke:#888,stroke-width:1px,color:#000;
+flowchart TB
+ subgraph MigrationFlow["MigrationFlow"]
+ direction TB
+        B["1. Read_Manifest_and_Check_API Tool: Lee manifiesto y pings a APIs (GitHub/DataFactory)"]
+        A["START - manifest.yaml"]
+        C["2. Framework_creator Tool: Parsea nombre (brz/gld) y crea plantillas Hopsflow/Brewtiful"]
+        D["3. Extractor_Tool Tool: Lee repos de GitHub y DataFactory para obtener assets 3.0"]
+        E["4. Schema_Normalizer Agente Simple: 🧠 LLM\nTraduce assets 3.0 a schema_v4.json"]
+        F{"5. Enrutador_de_Translators Tool: Lista los nodos\nparalelos segun brz/gld"}
+        P2["TransformationsTranslator"]
+        G1["NotebookTranslator"]
+        RF["Ruff Format (TOOL)"]
+        P1["PipelineTranslator (Hopsflow/brewtiful)"]
+        C1["ACLTranslator"]
+        C2["MetadataTranslator"]
+        C3["QualityTranslator"]
+        C4["SyncTranslator"]
+        C5["ObservabilityTranslator"]
+        V@{ label: "7. Validator_Tool\\nTool: Ejecuta 'engineeringstore --validate-dags'" }
+        CV@{ label: "8. Check Validation\\nTool: Reporte de 'engineeringstore' OK?" }
+        COR["9. CorrectorAgent\nAgente Simple: 🧠 LLM\nUsa output para corregir (MAX 3 iter.)"]
+        HITL["10. Human_Approval_Node\nPAUSA: espera aprobación humana final"]
+        CH{"11. Check Human Decision"}
+        R["12. ReporterLogger\nAgente Simple: 🧠 LLM\nEscribe migration_summary.md"]
+        GEN["13. Generator\nTool: Realiza push al\nrepositorio objetivo"]
+        Z(["END - Package Ready"])
+        ZR(["END - Rejected by Human"])
+  end
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F -- slv / brz --> P2
+    F -- gld --> G1
+    G1 --> RF
+    F -- slv / brz / gld --> P1 & C1 & C2 & C3 & C4 & C5
+    P1 --> V
+    C1 --> V
+    C2 --> V
+    C3 --> V
+    C4 --> V
+    C5 --> V
+    P2 --> V
+    RF --> V
+    V --> CV
+    CV -- FAIL --> COR
+    COR --> V
+    CV -- PASS --> HITL
+    HITL --> CH
+    CH -- APPROVE --> R
+    R --> GEN
+    GEN --> Z
+    CH -- REJECT --> ZR
+    V@{ shape: rect}
+    CV@{ shape: diamond}
+     B:::tool
+     A:::flow
+     C:::tool
+     D:::tool
+     E:::agent
+     F:::tool
+     P2:::agent
+     G1:::agent
+     RF:::tool
+     P1:::agent
+     C1:::agent
+     C2:::agent
+     C3:::agent
+     C4:::agent
+     C5:::agent
+     V:::tool
+     CV:::tool
+     COR:::agent
+     HITL:::human
+     CH:::human
+     R:::agent
+     GEN:::tool
+     Z:::flow
+     ZR:::flow
 
 ```
 
