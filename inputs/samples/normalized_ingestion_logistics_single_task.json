@@ -1,0 +1,110 @@
+{
+  "pipeline": {
+    "scope": "ingestion",
+    "domain": "logistics",
+    "schedule": "0 0 5 * *",
+    "time_zone": "UTC",
+    "name": "slv_maz_logistics_sap_pr0_mx",
+    "execution_timeout": 120,
+    "retry_delay": 15,
+    "retries": 1,
+    "public_dag": false,
+    "source_system": "SapPr0",
+    "zone": "maz",
+    "country": "mx",
+    "landing_zone": "maz",
+    "tasks": [
+      {
+        "name": "slv_maz_logistics_sap_pr0",
+        "connector": "blob",
+        "target_entity": "tvro",
+        "owner_team": "Platform",
+        "file_path": "data/maz/logistics/sap_pr0/mx_TVRO/__process_date=2024-06-01/TVRO_20240601_213804_cdc_1.parquet",
+        "file_type": "parquet",
+        "auth_type": "access_key",
+        "connection_id": "credential-blob-maz-parquet-test",
+        "metadata_include": "../dataset/slv_maz_logistics_sap_pr0/slv_maz_logistics_sap_pr0_metadata.yaml",
+        "sync_include": "../dataset/slv_maz_logistics_sap_pr0/slv_maz_logistics_sap_pr0_sync.yaml",
+        "observability_include": "../dataset/slv_maz_logistics_sap_pr0/slv_maz_logistics_sap_pr0_observability.yaml",
+        "quality_include": "../dataset/slv_maz_logistics_sap_pr0/slv_maz_logistics_sap_pr0_quality.yaml",
+        "transformations_include": "../dataset/slv_maz_logistics_sap_pr0/slv_maz_logistics_sap_pr0_transformations.yaml",
+        "acl_include": "../dataset/slv_maz_logistics_sap_pr0/slv_maz_logistics_sap_pr0_acl.yaml"
+      }
+    ]
+  },
+
+  "slv_maz_logistics_sap_pr0": {
+    "metadata": {
+      "description": "SAP PR0 logistics dataset migrated from ADF trigger",
+      "dataexpert": "Integration Platform Team",
+      "schema": [
+        {"name": "mandt", "description": "Client code from SAP PR0", "type": "smallint", "primary_key": true},
+        {"name": "vbeln", "description": "Sales document number", "type": "string", "primary_key": true},
+        {"name": "erdat", "description": "Creation date", "type": "date"},
+        {"name": "ernam", "description": "User who created the record", "type": "string"},
+        {"name": "vkorg", "description": "Sales organization", "type": "string"},
+        {"name": "vtweg", "description": "Distribution channel", "type": "string"},
+        {"name": "spart", "description": "Division code", "type": "string"},
+        {"name": "source_commit_ts", "description": "Source commit timestamp", "type": "string"},
+        {"name": "target_apply_ts", "description": "Target apply timestamp", "type": "string"}
+      ]
+    },
+
+    "sync": {
+      "mode": "overwrite",
+      "overwrite_schema": false,
+      "partition_by": ["__process_date"],
+      "vacuum_config": {"retain_hours": 720},
+      "delta_config": {
+        "custom_config": {
+          "spark.databricks.delta.retentionDurationCheck.enabled": "false",
+          "spark.databricks.delta.vacuum.parallelDelete.enabled": "true",
+          "spark.sql.sources.partitionOverwriteMode": "dynamic"
+        }
+      }
+    },
+
+    "quality": {
+      "expectations": [
+        {
+          "title": "Completeness check for document keys",
+          "handler": "completeness",
+          "columns": ["mandt", "vbeln"],
+          "arguments": {"blank_as_null": true}
+        },
+        {
+          "title": "Uniqueness check for sales documents",
+          "handler": "uniqueness",
+          "columns": ["mandt", "vbeln"]
+        }
+      ]
+    },
+
+    "observability": {
+      "type": "ms_teams",
+      "receivers": ["PlatformWebhook", "LogisticsWebhook"]
+    },
+
+    "transformations": {
+      "steps": [
+        {
+          "name": "normalize_date_columns",
+          "type": "python",
+          "script": "df = df.withColumn('erdat', F.to_date('erdat', 'yyyy-MM-dd'))"
+        },
+        {
+          "name": "remove_duplicates",
+          "type": "spark",
+          "statement": "df.dropDuplicates(['mandt', 'vbeln'])"
+        }
+      ]
+    },
+
+    "acl": {
+      "access_groups": [
+        "AADS_A_Brewdat-maz-p-maz-logistics-r",
+        "AADS_A_Brewdat-maz-p-maz-logistics-rw"
+      ]
+    }
+  }
+}
