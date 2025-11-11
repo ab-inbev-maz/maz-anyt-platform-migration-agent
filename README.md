@@ -91,7 +91,7 @@ This pattern isolates framework-specific logic while keeping the extraction flow
 │   └── hopsflow/
 │
 └── src/
-    └── migration_agent/
+    └── brewbridge/
         ├── __init__.py
         ├── main.py
         ├── config.py
