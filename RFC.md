@@ -77,62 +77,88 @@ flowchart TB
 
         %% --- 1. Initialization and Framework Detection ---
         A["START - manifest.yaml"]:::flow
-        B["1. Read_Manifest_and_Check_API Tool\nReads manifest and validates API connectivity"]:::tool
-        C["2. Framework_Creator Tool\nDetects environment_type brz gld and source_framework 3.0 COBOS"]:::tool
+        B["1. Read_Manifest_and_Check_API<br/>(ToolNode)"]:::tool
+        C["2. Framework_Creator<br/>(ToolNode)<br/>Detects 'brz|slv|gld' + source_framework"]:::tool
 
         %% --- 2. Extraction Phase (Strategy Pattern) ---
-        subgraph ExtractorTool["3. Extractor_Tool Strategy Based Tool\nSelects extraction strategy depending on source_framework"]
+        subgraph ExtractorTool["3. Extractor_Tool (Strategy Pattern)<br/>(ToolNode)"]
         direction TB
-            E3["Framework 3.0 Strategy\nUses GitHubSource and ADFSource"]:::flow
-            ECO["COBOS Strategy\nUses SQLSource and JSONSource"]:::flow
+            STR3["Framework3Strategy<br/>(fetch ADF + Notebook via GitHubClient)"]:::tool
+            STRC["COBOSStrategy<br/>(fetch SQL + JSON via GitHubClient)"]:::tool
         end
 
-        G3a["GitHubSource\nFetch notebooks and ADF JSONs"]:::tool
-        G3b["ADFSource\nFetch pipelines and activities"]:::tool
-        GCa["SQLSource\nFetch COBOS queries"]:::tool
-        GCb["JSONSource\nRead metadata or config files"]:::tool
+        %% --- 3. Schema Generation ---
+        SN["4. Schema_Normalizer<br/>(AgentNode)<br/>Creates normalized_schema_v4"]:::agent
 
-        %% --- 3. Downstream Processing ---
-        E["4. Schema_Normalizer Agent 🧠\nTranslates extracted assets into schema_v4.json"]:::agent
-        F{"5. Enrutador_de_Translators Tool\nLists translators per environment_type"}:::tool
+        %% --- NEW Step 5: Template Creator ---
+        TMP["5. Template_Creator<br/>(ToolNode)<br/>Generates template files via engineeringstore"]:::tool
 
-        %% --- Translators (Parallel Branches) ---
-        P2["TransformationsTranslator"]:::agent
-        G1["NotebookTranslator"]:::agent
-        RF["Ruff Format Tool"]:::tool
-        P1["PipelineTranslator Hopsflow Brewtiful"]:::agent
-        C1["ACLTranslator"]:::agent
-        C2["MetadataTranslator"]:::agent
-        C3["QualityTranslator"]:::agent
-        C4["SyncTranslator"]:::agent
-        C5["ObservabilityTranslator"]:::agent
+        %% --- 4. Translator Router ---
+        RT["6. Router_Tool<br/>(ToolNode)<br/>Resolves translator list"]:::tool
 
-        %% --- Validation Loop ---
-        V["7. Validator_Tool\nExecutes engineeringstore validate dags"]:::tool
-        CV{"8. Check Validation"}:::tool
-        COR["9. CorrectorAgent 🧠\nFixes validation errors up to 3 loops"]:::agent
+        %% --- 5. Translators (Parallel Fan-Out) ---
+        %% Shared translators
+        ACL["7. ACLTranslator"]:::agent
+        META["8. MetadataTranslator"]:::agent
+        QUAL["9. QualityTranslator"]:::agent
+        SYNC["10. SyncTranslator"]:::agent
+        OBS["11. ObservabilityTranslator"]:::agent
 
-        %% --- Human-in-the-loop and Reporting ---
-        HITL["10. Human_Approval_Node 🧍\nWaits for final approval"]:::human
-        CH{"11. Check Human Decision"}:::human
-        R["12. ReporterLogger 🧠\nGenerates migration_summary.md"]:::agent
-        GEN["13. Generator Tool\nPushes artifacts to GitHub target repo"]:::tool
-        Z["END - Package Ready"]:::flow
-        ZR["END - Rejected by Human"]:::flow
+        %% Hopsflow-specific
+        PIPE["12. PipelineTranslator<br/>(Hopsflow)"]:::agent
+        TRNS["13. TransformationsTranslator<br/>(Hopsflow)"]:::agent
+
+        %% Brewtiful-specific
+        NB["14. NotebookTranslator<br/>(Brewtiful)"]:::agent
+        RF["15. RuffFormatter<br/>(ToolNode)"]:::tool
+
+        %% --- 6. Validation Loop ---
+        VAL["16. Validator_Tool"]:::tool
+        CKV{"17. Check Validation"}:::tool
+        COR["18. CorrectorAgent<br/>(AgentNode)"]:::agent
+
+        %% --- 7. Human Validation ---
+        HITL["19. Human_Approval_Node<br/>(HumanNode)"]:::human
+        CH{"20. Check Human Decision"}:::human
+
+        %% --- 8. Reporting + Generation ---
+        REP["21. ReporterLogger<br/>(AgentNode)"]:::agent
+        GEN["22. Generator Tool"]:::tool
+        Z["23. END - Package Ready"]:::flow
+        ZR["23B. END - Rejected by Human"]:::flow
 
         %% --- Connections ---
-        A --> B --> C --> ExtractorTool
-        ExtractorTool --> E
-        E3 --> G3a & G3b
-        ECO --> GCa & GCb
-        E --> F
-        F -- slv or brz --> P2
-        F -- gld --> G1 --> RF
-        F -- all --> P1 & C1 & C2 & C3 & C4 & C5
-        P1 & C1 & C2 & C3 & C4 & C5 & P2 & RF --> V --> CV
-        CV -- FAIL --> COR --> V
-        CV -- PASS --> HITL --> CH
-        CH -- APPROVE --> R --> GEN --> Z
+        A --> B --> C --> ExtractorTool --> SN --> TMP --> RT
+
+        %% Router fan-out
+        RT --> ACL
+        RT --> META
+        RT --> QUAL
+        RT --> SYNC
+        RT --> OBS
+
+        %% Hopsflow branch
+        RT -- brz/slv --> PIPE
+        RT -- brz/slv --> TRNS
+
+        %% Brewtiful branch
+        RT -- gld --> NB --> RF
+
+        %% Fan-in to validator
+        ACL --> VAL
+        META --> VAL
+        QUAL --> VAL
+        SYNC --> VAL
+        OBS --> VAL
+        PIPE --> VAL
+        TRNS --> VAL
+        RF --> VAL
+
+        VAL --> CKV
+        CKV -- FAIL --> COR --> VAL
+        CKV -- PASS --> HITL --> CH
+
+        CH -- APPROVE --> REP --> GEN --> Z
         CH -- REJECT --> ZR
     end
 
@@ -141,7 +167,6 @@ flowchart TB
     classDef agent fill:#9fd5ff,stroke:#004d80,stroke-width:1px,color:#000;
     classDef human fill:#c8f7c5,stroke:#2b8000,stroke-width:1px,color:#000;
     classDef flow fill:#e0e0e0,stroke:#888,stroke-width:1px,color:#000;
-
 
 ```
 
