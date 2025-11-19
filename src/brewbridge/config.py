@@ -13,5 +13,5 @@ llm_asimov = ChatOpenAI(
     api_key=ASIMOV_URL,
     temperature=0.0,
     max_retries=3,
-    extra_body={"max_tokens": 1000} # Ajustar si se llegan a generar salidas muy largas
+    extra_body={"max_tokens": 1000},  # Ajustar si se llegan a generar salidas muy largas
 )
