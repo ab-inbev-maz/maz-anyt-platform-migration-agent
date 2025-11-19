@@ -1,0 +1,223 @@
+{
+  "pipeline": {
+    "scope": "ingestion",
+    "domain": "sales",
+    "schedule": "30 5 * * *",
+    "time_zone": "America/Sao_Paulo",
+    "name": "silver_layer_historic",
+    "execution_timeout": 240,
+    "retry_delay": 10,
+    "retries": 2,
+    "public_dag": true,
+    "source_system": "Cubosdg",
+    "zone": "saz",
+    "country": "br",
+    "tasks": [
+      {
+        "name": "nab_historic",
+        "connector": "blob",
+        "target_entity": "nab_historic_teste",
+        "owner_team": "Sales Core",
+        "file_type": "csv",
+        "file_path": "CuboSDG/ResultadosOficiaisManual/historico/2025/origem/:date:/nab/",
+        "path_variables": {
+          "date": {
+            "day_range": "0",
+            "date_format": "%Y%m%d"
+          }
+        },
+        "backfill": true,
+        "protocol_type": "wasbs",
+        "has_header": false,
+        "encoding": "UTF-8",
+        "column_separator": "\t",
+        "multiples_files": true,
+        "auth_type": "sas_token",
+        "connection_id": "credential-blob-connection-sas-token-cubo-sdg",
+        "metadata_include": "../dataset/nab_historic/nab_historic_metadata.yaml",
+        "sync_include": "../dataset/nab_historic/nab_historic_sync.yaml",
+        "observability_include": "../dataset/nab_historic/nab_historic_observability.yaml",
+        "quality_include": "../dataset/nab_historic/nab_historic_quality.yaml",
+        "transformations_include": "../dataset/nab_historic/nab_historic_transformations.yaml"
+      },
+      {
+        "name": "cerveja_historic",
+        "connector": "blob",
+        "target_entity": "cerveja_historic",
+        "owner_team": "Sales Core",
+        "file_type": "csv",
+        "file_path": "CuboSDG/ResultadosOficiaisManual/historico/2025/origem/:date:/cerveja/",
+        "path_variables": {
+          "date": {
+            "day_range": "0",
+            "date_format": "%Y%m%d"
+          }
+        },
+        "backfill": true,
+        "protocol_type": "wasbs",
+        "has_header": false,
+        "encoding": "UTF-8",
+        "column_separator": "\t",
+        "multiples_files": true,
+        "auth_type": "sas_token",
+        "connection_id": "credential-blob-connection-sas-token-cubo-sdg",
+        "metadata_include": "../dataset/cerveja_historic/cerveja_historic_metadata.yaml",
+        "sync_include": "../dataset/cerveja_historic/cerveja_historic_sync.yaml",
+        "observability_include": "../dataset/cerveja_historic/cerveja_historic_observability.yaml",
+        "quality_include": "../dataset/cerveja_historic/cerveja_historic_quality.yaml",
+        "transformations_include": "../dataset/cerveja_historic/cerveja_historic_transformations.yaml"
+      },
+      {
+        "name": "bees_historic",
+        "connector": "blob",
+        "target_entity": "bees_historic",
+        "owner_team": "Sales Core",
+        "file_type": "csv",
+        "file_path": "CuboSDG/ResultadosOficiaisManual/historico/2025/origem/:date:/bees/",
+        "path_variables": {
+          "date": {
+            "day_range": "0",
+            "date_format": "%Y%m%d"
+          }
+        },
+        "backfill": true,
+        "protocol_type": "wasbs",
+        "has_header": false,
+        "encoding": "UTF-8",
+        "column_separator": "\t",
+        "multiples_files": true,
+        "auth_type": "sas_token",
+        "connection_id": "credential-blob-connection-sas-token-cubo-sdg",
+        "metadata_include": "../dataset/bees_historic/bees_historic_metadata.yaml",
+        "sync_include": "../dataset/bees_historic/bees_historic_sync.yaml",
+        "observability_include": "../dataset/bees_historic/bees_historic_observability.yaml",
+        "quality_include": "../dataset/bees_historic/bees_historic_quality.yaml",
+        "transformations_include": "../dataset/bees_historic/bees_historic_transformations.yaml"
+      },
+      {
+        "name": "totalizador_historic",
+        "connector": "blob",
+        "target_entity": "totalizador_historic",
+        "owner_team": "Sales Core",
+        "file_type": "csv",
+        "file_path": "CuboSDG/ResultadosOficiaisTotalizadorManual/historico/2025/origem/:date:/",
+        "path_variables": {
+          "date": {
+            "day_range": "0",
+            "date_format": "%Y%m%d"
+          }
+        },
+        "backfill": true,
+        "protocol_type": "wasbs",
+        "has_header": false,
+        "encoding": "UTF-8",
+        "column_separator": "\t",
+        "multiples_files": true,
+        "auth_type": "sas_token",
+        "connection_id": "credential-blob-connection-sas-token-cubo-sdg",
+        "metadata_include": "../dataset/totalizador_historic/totalizador_historic_metadata.yaml",
+        "sync_include": "../dataset/totalizador_historic/totalizador_historic_sync.yaml",
+        "observability_include": "../dataset/totalizador_historic/totalizador_historic_observability.yaml",
+        "quality_include": "../dataset/totalizador_historic/totalizador_historic_quality.yaml",
+        "transformations_include": "../dataset/totalizador_historic/totalizador_historic_transformations.yaml"
+      }
+    ]
+  },
+
+  "nab_historic": {
+    "metadata": {
+      "description": "NAB historic dataset from CuboSDG ingestion process",
+      "dataexpert": "Sales Core Data Engineering",
+      "schema": [
+        {"name": "date", "description": "Reference date", "type": "date", "primary_key": true},
+        {"name": "poc_id", "description": "Point of contact identifier", "type": "string", "primary_key": true},
+        {"name": "product_id", "description": "Product identifier", "type": "string"},
+        {"name": "sales_volume", "description": "Sales volume in hectoliters", "type": "double"},
+        {"name": "updated_at", "description": "Last update timestamp", "type": "timestamp"}
+      ]
+    },
+    "sync": {
+      "mode": "overwrite",
+      "overwrite_schema": false,
+      "partition_by": ["date"],
+      "vacuum_config": {"retain_hours": 720},
+      "delta_config": {
+        "custom_config": {
+          "spark.sql.sources.partitionOverwriteMode": "dynamic"
+        }
+      }
+    },
+    "quality": {
+      "expectations": [
+        {
+          "title": "Completeness check for POC and Product IDs",
+          "handler": "completeness",
+          "columns": ["poc_id", "product_id"]
+        }
+      ]
+    },
+    "observability": {"type": "ms_teams", "receivers": ["SalesCoreWebhook"]},
+    "transformations": {
+      "steps": [
+        {
+          "name": "standardize_columns",
+          "type": "python",
+          "script": "df = df.withColumnRenamed('poc_id','POC_ID')"
+        }
+      ]
+    },
+    "acl": {"access_groups": ["AADS_A_Brewdat-saz-p-saz-sales-r", "AADS_A_Brewdat-saz-p-saz-sales-rw"]}
+  },
+
+  "cerveja_historic": {
+    "metadata": {
+      "description": "Cerveja historic dataset from CuboSDG ingestion process",
+      "dataexpert": "Sales Core Data Engineering",
+      "schema": [
+        {"name": "date", "description": "Reference date", "type": "date", "primary_key": true},
+        {"name": "brand_id", "description": "Beer brand identifier", "type": "string", "primary_key": true},
+        {"name": "region", "description": "Geographical region", "type": "string"},
+        {"name": "sales_volume", "description": "Sales volume", "type": "double"}
+      ]
+    },
+    "sync": {"mode": "overwrite", "overwrite_schema": false, "partition_by": ["date"]},
+    "quality": {"expectations": [{"title": "Completeness check", "handler": "completeness", "columns": ["brand_id"]}]},
+    "observability": {"type": "ms_teams", "receivers": ["SalesCoreWebhook"]},
+    "transformations": {"steps": [{"name": "clean_nulls", "type": "spark", "statement": "df.na.drop()"}]},
+    "acl": {"access_groups": ["AADS_A_Brewdat-saz-p-saz-sales-r", "AADS_A_Brewdat-saz-p-saz-sales-rw"]}
+  },
+
+  "bees_historic": {
+    "metadata": {
+      "description": "BEES historic dataset from CuboSDG ingestion process",
+      "dataexpert": "Sales Core Data Engineering",
+      "schema": [
+        {"name": "date", "description": "Reference date", "type": "date", "primary_key": true},
+        {"name": "client_id", "description": "BEES client identifier", "type": "string", "primary_key": true},
+        {"name": "sales_value", "description": "Sales value (BRL)", "type": "double"}
+      ]
+    },
+    "sync": {"mode": "overwrite", "overwrite_schema": false, "partition_by": ["date"]},
+    "quality": {"expectations": [{"title": "Completeness check", "handler": "completeness", "columns": ["client_id"]}]},
+    "observability": {"type": "ms_teams", "receivers": ["SalesCoreWebhook"]},
+    "transformations": {"steps": [{"name": "currency_format", "type": "python", "script": "df = df.withColumn('sales_value', F.round('sales_value',2))"}]},
+    "acl": {"access_groups": ["AADS_A_Brewdat-saz-p-saz-sales-r", "AADS_A_Brewdat-saz-p-saz-sales-rw"]}
+  },
+
+  "totalizador_historic": {
+    "metadata": {
+      "description": "Totalizador historic dataset from CuboSDG ingestion process",
+      "dataexpert": "Sales Core Data Engineering",
+      "schema": [
+        {"name": "date", "description": "Reference date", "type": "date", "primary_key": true},
+        {"name": "region", "description": "Sales region", "type": "string"},
+        {"name": "total_volume", "description": "Total sales volume", "type": "double"}
+      ]
+    },
+    "sync": {"mode": "overwrite", "overwrite_schema": false, "partition_by": ["date"]},
+    "quality": {"expectations": [{"title": "Completeness check", "handler": "completeness", "columns": ["region"]}]},
+    "observability": {"type": "ms_teams", "receivers": ["SalesCoreWebhook"]},
+    "transformations": {"steps": [{"name": "aggregate_region", "type": "spark", "statement": "df.groupBy('region').sum('total_volume')"}]},
+    "acl": {"access_groups": ["AADS_A_Brewdat-saz-p-saz-sales-r", "AADS_A_Brewdat-saz-p-saz-sales-rw"]}
+  }
+}

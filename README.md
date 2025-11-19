@@ -79,6 +79,9 @@ This pattern isolates framework-specific logic while keeping the extraction flow
 │   │   ├── normalized_schema_v4.json
 │   │   ├── acl.yaml
 │   │   ├── metadata.yaml
+│   │   ├── quality.yaml
+│   │   ├── sync.yaml
+│   │   ├── observability.yaml
 │   │   ├── pipeline.yaml
 │   │   ├── transformations.yaml
 │   │   ├── migration_summary.md
@@ -99,7 +102,7 @@ This pattern isolates framework-specific logic while keeping the extraction flow
         ├── core/
         │   ├── graph_builder.py
         │   ├── state.py
-        │   ├── base_nodes.py
+        │   ├── base_nodes.py           # ToolNode, AgentNode, HumanNode
         │   ├── runner.py
         │   ├── callbacks.py
         │   └── __init__.py
@@ -108,11 +111,20 @@ This pattern isolates framework-specific logic while keeping the extraction flow
         │   ├── tools/
         │   │   ├── read_manifest.py
         │   │   ├── framework_creator.py
-        │   │   ├── extractor_tool.py
+        │   │   ├── extractor/                # Extractor ToolNodes
+        │   │   │   ├── extractor_tool_v3.py  # Step 3 - 3.0
+        │   │   │   ├── extractor_tool_cobos.py
+        │   │   │   └── __init__.py
         │   │   ├── router_tool.py
         │   │   ├── validator_tool.py
         │   │   ├── generator.py
         │   │   ├── ruff_formatter.py
+        │   │   └── __init__.py
+        │   │
+        │   ├── extractor_strategies/         # Deterministic Strategy Pattern
+        │   │   ├── base_strategy.py
+        │   │   ├── framework_3_0_strategy.py
+        │   │   ├── cobos_strategy.py
         │   │   └── __init__.py
         │   │
         │   ├── agents/
@@ -122,62 +134,53 @@ This pattern isolates framework-specific logic while keeping the extraction flow
         │   │   ├── translators/
         │   │   │   ├── acl_translator.py
         │   │   │   ├── metadata_translator.py
-        │   │   │   ├── pipeline_translator.py
-        │   │   │   ├── transformations_translator.py
-        │   │   │   ├── notebook_translator.py
-        │   │   │   ├── sync_translator.py
         │   │   │   ├── quality_translator.py
-        │   │   │   └── observability_translator.py
+        │   │   │   ├── sync_translator.py
+        │   │   │   ├── observability_translator.py
+        │   │   │   ├── pipeline_translator.py           # Hopsflow only
+        │   │   │   ├── transformations_translator.py    # Hopsflow only
+        │   │   │   ├── notebook_translator.py           # Brewtiful only
+        │   │   │   └── __init__.py
         │   │   └── __init__.py
         │   │
         │   ├── humans/
         │   │   ├── approval_node.py
         │   │   └── decision_node.py
         │   │
-        │   ├── sources/
-        │   │   ├── base_source.py
-        │   │   ├── github_source.py
-        │   │   ├── adf_source.py
-        │   │   ├── sql_source.py
-        │   │   ├── json_source.py
-        │   │   ├── strategies/
-        │   │   │   ├── github_3_0_strategy.py
-        │   │   │   ├── github_cobos_strategy.py
-        │   │   │   ├── adf_3_0_strategy.py
-        │   │   │   ├── sql_cobos_strategy.py
-        │   │   │   └── __init__.py
-        │   │   └── __init__.py
-        │   │
         │   └── __init__.py
         │
         ├── infra/
         │   ├── github_client.py
-        │   ├── datafactory_client.py
+        │   ├── datafactory_client.py      # optional, if still used
         │   ├── engineeringstore_cli.py
         │   ├── storage_manager.py
         │   ├── logger.py
         │   └── __init__.py
         │
         ├── prompts/
-        │   ├── schema_normalizer.md
-        │   ├── corrector_agent.md
-        │   ├── reporter_logger.md
+        │   ├── schema_normalizer_prompt.py
+        │   ├── corrector_agent_prompt.py
+        │   ├── reporter_logger_prompt.py
         │   └── translators/
-        │       ├── acl.md
-        │       ├── metadata.md
-        │       ├── pipeline.md
-        │       ├── transformations.md
-        │       ├── notebook.md
-        │       ├── sync.md
-        │       ├── quality.md
-        │       └── observability.md
+        │       ├── acl_prompt.py
+        │       ├── metadata_prompt.py
+        │       ├── quality_prompt.py
+        │       ├── sync_prompt.py
+        │       ├── observability_prompt.py
+        │       ├── pipeline_prompt.py
+        │       ├── transformations_prompt.py
+        │       ├── notebook_prompt.py
+        │       └── __init__.py
         │
-        └── utils/
-            ├── file_utils.py
-            ├── yaml_utils.py
-            ├── retry_utils.py
-            ├── exceptions.py
-            └── __init__.py
+        ├── utils/
+        │   ├── file_utils.py
+        │   ├── yaml_utils.py
+        │   ├── retry_utils.py
+        │   ├── exceptions.py
+        │   └── __init__.py
+        │
+        └── __init__.py
+
 ````
 
 ---
