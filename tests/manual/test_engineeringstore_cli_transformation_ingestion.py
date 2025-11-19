@@ -8,7 +8,9 @@ Run:
 """
 
 from brewbridge.infrastructure.engineeringstore_cli import (
-    EngineeringStoreCLI, EngineeringStoreCommand)
+    EngineeringStoreCLI,
+    EngineeringStoreCommand,
+)
 
 # ============================================================
 # 1) TRANSFORMATION TEST
@@ -34,16 +36,12 @@ def run_transformation():
     cli = EngineeringStoreCLI()
 
     command = EngineeringStoreCommand(
-        command=[
-            "engineeringstore",
-            "transformation",
-            "--create-template-files"
-        ],
+        command=["engineeringstore", "transformation", "--create-template-files"],
         table_type="gold",
         needs_input=True,
     )
 
-    print("\n\n>>> Ejecutando TRANSFORMATION...")
+    print("\n\n>>> Executing TRANSFORMATION...")
     try:
         stdout = cli.run(command, input_text=transformation_input)
         print("\n>>> STDOUT:")
@@ -79,16 +77,12 @@ def run_ingestion():
     cli = EngineeringStoreCLI()
 
     command = EngineeringStoreCommand(
-        command=[
-            "engineeringstore",
-            "ingestion",
-            "--create-template-files"
-        ],
-        table_type="brz",      # ingestion → hopsflow
+        command=["engineeringstore", "ingestion", "--create-template-files"],
+        table_type="brz",  # ingestion → hopsflow
         needs_input=True,
     )
 
-    print("\n\n>>> Ejecutando INGESTION...")
+    print("\n\n>>> Executing INGESTION...")
     try:
         stdout = cli.run(command, input_text=ingestion_input)
         print("\n>>> STDOUT:")

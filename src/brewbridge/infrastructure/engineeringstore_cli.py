@@ -15,9 +15,11 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from brewbridge.infrastructure.logger import get_logger
-from brewbridge.utils.exceptions import (EngineeringStoreExecutionError,
-                                         EngineeringStoreNotInstalledError,
-                                         EngineeringStoreTimeoutError)
+from brewbridge.utils.exceptions import (
+    EngineeringStoreExecutionError,
+    EngineeringStoreNotInstalledError,
+    EngineeringStoreTimeoutError,
+)
 
 
 @dataclass(frozen=True)
@@ -29,8 +31,9 @@ class EngineeringStoreCommand:
         - "gold" → brewtiful repo
         - "brz" or "slv" → hopsflow repo
     """
+
     command: List[str]
-    table_type: str                 # NEW: now required
+    table_type: str
     needs_input: bool = False
 
 
@@ -53,14 +56,11 @@ class EngineeringStoreCLI:
         if table_type.lower() in ("brz", "slv"):
             return os.path.join("cache", "hopsflow", "brewdat-pltfrm-ghq-tech-hopsflow")
 
-        raise ValueError(
-            f"Invalid table_type '{table_type}'. Expected 'gold', 'brz', or 'slv'."
-        )
+        raise ValueError(f"Invalid table_type '{table_type}'. Expected 'gold', 'brz', or 'slv'.")
 
     def run(self, es_command: EngineeringStoreCommand, input_text: Optional[str] = None) -> str:
         cmd_list = es_command.command
 
-        # Resolve derived working directory from table_type
         working_dir = self._resolve_working_dir(es_command.table_type)
 
         if not os.path.isdir(working_dir):
@@ -80,7 +80,7 @@ class EngineeringStoreCLI:
         try:
             process = subprocess.run(
                 cmd_list,
-                cwd=working_dir,          # <-- based on table_type
+                cwd=working_dir,
                 input=input_text if es_command.needs_input else None,
                 text=True,
                 capture_output=True,
