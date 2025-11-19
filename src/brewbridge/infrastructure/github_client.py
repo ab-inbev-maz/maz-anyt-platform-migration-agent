@@ -1,5 +1,3 @@
-# src/brewbridge/infra/github_client.py
-
 import base64
 import requests
 import os
@@ -7,6 +5,8 @@ from requests import Response, Session
 from loguru import logger
 from brewbridge.utils.exceptions import GitHubAuthError, GitHubRequestError
 
+# uv add requests
+# uv add loguru
 
 class GitHubClient:
     """
@@ -26,7 +26,7 @@ class GitHubClient:
         self.session.headers.update({
             "Authorization": f"Bearer {token}",
             "Accept": self.ACCEPT_HEADER,
-            "X-GitHub-Api-Version": self.API_VERSION_HEADER
+            "X-GitHub-Api-Version": self.API_VERSION_HEADER # Falta mirar si es util
         })
         logger.debug("GitHubClient initialized successfully.")
 
@@ -96,10 +96,8 @@ class GitHubClient:
             logger.error(f"Failed to decode Base64 content for {url}: {e}")
             raise GitHubRequestError(f"Failed to decode file content for {path}: {e}")
         except requests.exceptions.HTTPError as e:
-            # Raised by res.raise_for_status()
             logger.error(f"GitHub API HTTP error: {e}")
             raise GitHubRequestError(f"GitHub API error: {e.response.status_code}")
         except requests.exceptions.RequestException as e:
-            # Catch-all for network issues, timeouts, etc.
             logger.error(f"GitHub get_file request failed: {e}")
             raise GitHubRequestError(f"Network error getting file: {e}")
