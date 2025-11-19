@@ -1,12 +1,11 @@
-from typing import Literal, Dict
-from langgraph.graph import StateGraph, END
+from typing import Dict, Literal
+
+from langgraph.graph import END, StateGraph
 from src.state import MigrationGraphState
 
 
-# aqui estoy apenas tratando de crear la estructura como tipo test con un camino por defecto para probar el flujo completo
 def node_read_manifest(state: MigrationGraphState) -> Dict:
     print("\n--- [Paso 1] READ MANIFEST (MOCK) ---")
-    # Simulamos que leemos un manifiesto y encontramos un pipeline 'brz'
     return {
         "api_connectivity_ok": True,
         "current_pipeline_data": {"name": "pipe_brz_ventas", "type": "bronze"},
@@ -15,7 +14,6 @@ def node_read_manifest(state: MigrationGraphState) -> Dict:
 
 def node_framework_creator(state: MigrationGraphState) -> Dict:
     print("--- [Paso 2] FRAMEWORK CREATOR (MOCK) ---")
-    # Simulamos detección de Hopsflow (brz) --> despues a gld para probar brewtiful
     mock_env = "brz"
     print(f"    Detected environment: {mock_env}")
     return {
