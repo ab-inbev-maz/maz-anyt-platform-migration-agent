@@ -3,7 +3,7 @@ name = "brewbridge"
 version = "0.1.0"
 description = "BrewBridge AI is an intelligent agentic framework that automates data pipeline migrations from legacy platforms (e.g., Data Platform 3.0, COBOS) to the BrewDat 4.0 ecosystem."
 authors = [{name = "Brewdat MAZ Platform Team"}]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
     "langgraph==0.6.8",
@@ -21,7 +21,7 @@ dependencies = [
     "pytest>=8.0.0,<9",
     "orjson>=3.10.12,<4",
     "typing-extensions>=4.12.2,<5",
-    "engineeringstore>=2.124.1",
+    "engineeringstore>=2.125.1",
 ]
 
 [project.urls]
