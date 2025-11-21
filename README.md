@@ -58,128 +58,85 @@ This pattern isolates framework-specific logic while keeping the extraction flow
 
 ```plaintext
 .
-├── README.md
-├── LICENSE
-├── pyproject.toml
+├── .env
 ├── .env.example
 ├── .gitignore
-│
-├── inputs/
-│   ├── manifest.yaml
-│   └── samples/
-│       ├── adf_pipeline.json
-│       ├── notebook_sample.py
-│       └── cobos_query.sql
-│
-├── outputs/
-│   ├── 2025-11-08_pipeline_x/
-│   │   ├── raw_artifacts/
-│   │   │   ├── adf_pipeline.json
-│   │   │   └── notebook_source.py
-│   │   ├── normalized_schema_v4.json
-│   │   ├── acl.yaml
-│   │   ├── metadata.yaml
-│   │   ├── quality.yaml
-│   │   ├── sync.yaml
-│   │   ├── observability.yaml
-│   │   ├── pipeline.yaml
-│   │   ├── transformations.yaml
-│   │   ├── migration_summary.md
-│   │   └── logs/
-│   │       └── validator_output.txt
-│   └── ...
-│
-├── cache/
-│   ├── brewtiful/
-│   └── hopsflow/
-│
-└── src/
-    └── brewbridge/
-        ├── __init__.py
-        ├── main.py
-        ├── config.py
-        │
-        ├── core/
-        │   ├── graph_builder.py
-        │   ├── state.py
-        │   ├── base_nodes.py           # ToolNode, AgentNode, HumanNode
-        │   ├── runner.py
-        │   ├── callbacks.py
-        │   └── __init__.py
-        │
-        ├── domain/
-        │   ├── tools/
-        │   │   ├── read_manifest.py
-        │   │   ├── framework_creator.py
-        │   │   ├── extractor/                # Extractor ToolNodes
-        │   │   │   ├── extractor_tool_v3.py  # Step 3 - 3.0
-        │   │   │   ├── extractor_tool_cobos.py
-        │   │   │   └── __init__.py
-        │   │   ├── router_tool.py
-        │   │   ├── validator_tool.py
-        │   │   ├── generator.py
-        │   │   ├── ruff_formatter.py
-        │   │   └── __init__.py
-        │   │
-        │   ├── extractor_strategies/         # Deterministic Strategy Pattern
-        │   │   ├── base_strategy.py
-        │   │   ├── framework_3_0_strategy.py
-        │   │   ├── cobos_strategy.py
-        │   │   └── __init__.py
-        │   │
-        │   ├── agents/
-        │   │   ├── schema_normalizer.py
-        │   │   ├── corrector_agent.py
-        │   │   ├── reporter_logger.py
-        │   │   ├── translators/
-        │   │   │   ├── acl_translator.py
-        │   │   │   ├── metadata_translator.py
-        │   │   │   ├── quality_translator.py
-        │   │   │   ├── sync_translator.py
-        │   │   │   ├── observability_translator.py
-        │   │   │   ├── pipeline_translator.py           # Hopsflow only
-        │   │   │   ├── transformations_translator.py    # Hopsflow only
-        │   │   │   ├── notebook_translator.py           # Brewtiful only
-        │   │   │   └── __init__.py
-        │   │   └── __init__.py
-        │   │
-        │   ├── humans/
-        │   │   ├── approval_node.py
-        │   │   └── decision_node.py
-        │   │
-        │   └── __init__.py
-        │
-        ├── infra/
-        │   ├── github_client.py
-        │   ├── datafactory_client.py      # optional, if still used
-        │   ├── engineeringstore_cli.py
-        │   ├── storage_manager.py
-        │   ├── logger.py
-        │   └── __init__.py
-        │
-        ├── prompts/
-        │   ├── schema_normalizer_prompt.py
-        │   ├── corrector_agent_prompt.py
-        │   ├── reporter_logger_prompt.py
-        │   └── translators/
-        │       ├── acl_prompt.py
-        │       ├── metadata_prompt.py
-        │       ├── quality_prompt.py
-        │       ├── sync_prompt.py
-        │       ├── observability_prompt.py
-        │       ├── pipeline_prompt.py
-        │       ├── transformations_prompt.py
-        │       ├── notebook_prompt.py
-        │       └── __init__.py
-        │
-        ├── utils/
-        │   ├── file_utils.py
-        │   ├── yaml_utils.py
-        │   ├── retry_utils.py
-        │   ├── exceptions.py
-        │   └── __init__.py
-        │
-        └── __init__.py
+├── .python-version
+├── cache
+│   ├── brewtiful
+│   │   └── .gitkeep
+│   └── hopsflow
+│       └── .gitkeep
+├── inputs
+│   ├── .gitkeep
+│   └── samples
+│       ├── normalized_ingestion_logistics_single_task.json
+│       └── normalized_ingestion_sales_multi_task.json
+├── LICENSE
+├── migration_flow.png
+├── outputs
+│   ├── .gitkeep
+│   └── 2025-11-08_pipeline_x
+│       └── raw_artifacts
+│           └── .gitkeep
+├── pyproject.toml
+├── README.md
+├── RFC.md
+├── src
+│   └── brewbridge
+│       ├── __init__.py
+│       ├── config.py
+│       ├── core
+│       │   ├── __init__.py
+│       │   ├── base_nodes.py
+│       │   ├── graph_builder.py
+│       │   └── state.py
+│       ├── domain
+│       │   ├── __init__.py
+│       │   ├── agents
+│       │   │   ├── __init__.py
+│       │   │   └── translators
+│       │   │       └── __init__.py
+│       │   ├── extractor_strategies
+│       │   │   ├── __init__.py
+│       │   │   ├── cobos_strategy.py
+│       │   │   └── framework_3_0_strategy.py
+│       │   └── tools
+│       │       ├── __init__.py
+│       │       ├── engineeringstore_input_builder.py
+│       │       ├── extractor
+│       │       │   ├── __init__.py
+│       │       │   └── 3.0
+│       │       │       └── __init__.py
+│       │       └── template_creator.py
+│       ├── humans
+│       │   └── __init__.py
+│       ├── infrastructure
+│       │   ├── __init__.py
+│       │   ├── engineeringstore_cli.py
+│       │   └── logger.py
+│       ├── main.py
+│       ├── prompts
+│       │   ├── __init__.py
+│       │   ├── schema_normalizer.md
+│       │   └── translators
+│       │       └── __init__.py
+│       └── utils
+│           ├── __init__.py
+│           └── exceptions.py
+├── tests
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── integration
+│   │   └── __init__.py
+│   ├── manual
+│   │   └── test_engineeringstore_cli_transformation_ingestion.py
+│   └── unit
+│       ├── __init__.py
+│       ├── test_extraction.py
+│       └── test_normalization.py
+├── tree.md
+└── uv.lock
 
 ````
 
