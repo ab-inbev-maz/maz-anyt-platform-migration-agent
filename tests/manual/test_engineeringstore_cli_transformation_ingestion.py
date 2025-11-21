@@ -58,7 +58,7 @@ def run_transformation():
 ingestion_input = """\
 maz
 maz
-co
+
 sales
 test
 * * 2 * 2

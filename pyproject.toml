@@ -21,7 +21,7 @@ dependencies = [
     "pytest>=8.0.0,<9",
     "orjson>=3.10.12,<4",
     "typing-extensions>=4.12.2,<5",
-    "engineeringstore>=2.125.1",
+    "engineeringstore==2.121.4",
 ]
 
 [project.urls]
