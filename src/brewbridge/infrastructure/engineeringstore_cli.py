@@ -17,6 +17,17 @@ dotenv.load_dotenv()
 
 @dataclass(frozen=True)
 class EngineeringStoreCommand:
+    """
+    Represents a command to be executed by the engineeringstore CLI.
+
+    Parameters:
+        command (List[str]): The CLI command and its arguments.
+        table_type (str): Determines which repository the command is routed to.
+            Accepted values:
+                - "gold": routes to the brewtiful repository.
+                - "brz" or "slv": routes to the hopsflow repository.
+        needs_input (bool): Whether the command expects input via stdin.
+    """
     command: List[str]
     table_type: str
     needs_input: bool = False
