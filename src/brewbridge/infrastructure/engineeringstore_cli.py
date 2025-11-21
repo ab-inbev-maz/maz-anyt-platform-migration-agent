@@ -34,6 +34,7 @@ class EngineeringStoreCommand:
 
 
 class EngineeringStoreCLI:
+    """Facade wrapper responsible for executing `engineeringstore` CLI commands."""
     def __init__(self, logger=None, timeout: int = 300):
         self.logger = logger or get_logger(__name__)
         self.timeout = timeout
