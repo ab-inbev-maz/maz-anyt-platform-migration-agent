@@ -44,10 +44,16 @@ def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
         owner = schema.get("owner", "platform")
         schedule = schema.get("schedule", "* * * * *")
         table_scope = schema.get("table_scope", "default_task")
-        table_type = schema.get("table_type", "feature_store")
+        table_name = schema.get("table_name", "feature_store")
         data_product_subdomain = schema.get("data_product_subdomain", "default")
         acl = schema.get("acl", "y")
         trigger = schema.get("trigger", "n")
+        connector = schema.get("connector", "unknown_connector")
+        source_system = schema.get("source_system", "unknown_source_system")
+        source_entity = schema.get("source_entity", "unknown_source_entity")
+        target_entity = schema.get("target_entity", "unknown_target_entity")
+        connection_id = schema.get("connection_id", "unknown_connection_id")
+        transformations = schema.get("transformations", "none")
 
         if env_type == "gld":
             prompt = f"""\
@@ -57,9 +63,9 @@ def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
 {domain}
 {pipeline}
 {schedule}
-{table_scope}
+{table_name}
 {owner}
-{table_type}
+{table_scope}
 
 {data_product_subdomain}
 {acl}{trigger}
@@ -67,19 +73,19 @@ def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
         else:
             prompt = f"""\
 {zone}
-{zone}
+{landing_zone}
 
 {domain}
 {pipeline}
 {schedule}
-{pipeline}
+{table_name}
 {owner}
-blob
-sap
-sap
-sap
-sap-secret
-yn
+{connector}
+{source_system}
+{source_entity}
+{target_entity}
+{connection_id}
+{transformations if env_type == "brz/slv" else "n"}{acl}
 """
 
         cli.run(es_command, input_text=prompt)
