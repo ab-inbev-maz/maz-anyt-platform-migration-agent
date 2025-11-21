@@ -151,6 +151,122 @@ uv sync
 uv pip install -e .
 ```
 
+Aquí tienes la sección **limpia, final y perfecta**, sin los puntos 6 y 7.
+Lista para pegar directo en tu README.
+
+---
+
+# 📊 MLflow Local Observability Setup
+
+To enable the new **Observability Layer**, every developer must run a **local MLflow Tracking Server**.
+This ensures a consistent environment for inspecting traces, artifacts, metrics, YAML diffs, and node-level behaviors across the entire BrewBridge migration flow.
+
+This setup is lightweight, reproducible, and fully aligned with the team’s local development workflow.
+
+---
+
+## 🔧 1. Install Dependencies (via `uv`)
+
+All MLflow dependencies are already defined in the project configuration.
+
+Every developer simply needs to run:
+
+```bash
+uv sync
+```
+
+This installs MLflow and all required observability packages into the virtual environment.
+
+---
+
+## 🚀 2. Start the Local MLflow Tracking Server
+
+From the project root:
+
+```bash
+mlflow server \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --backend-store-uri sqlite:///mlflow.db \
+  --default-artifact-root ./mlruns
+```
+
+This launches:
+
+* **SQLite** → local metadata storage
+* `./mlruns/` → artifact store
+* MLflow UI → [http://127.0.0.1:8080](http://127.0.0.1:8080)
+
+> Every developer runs this locally.
+> Zero cloud dependency. No credentials required. Full autonomy.
+
+---
+
+## 🏷️ 3. Configure BrewBridge to Log to Local MLflow
+
+Add this to your local `.env` (ignored by Git):
+
+```
+MLFLOW_TRACKING_URI=http://127.0.0.1:8080
+MLFLOW_EXPERIMENT_NAME=brewbridge_observability
+```
+
+The observability layer will automatically route all traces and metrics to your local MLflow instance.
+
+---
+
+## 🧪 4. Validate the Setup
+
+Run:
+
+```python
+import dotenv
+import mlflow
+
+load_dotenv()
+
+print("Tracking:", mlflow.get_tracking_uri())
+
+with mlflow.start_run():
+    mlflow.log_param("env_test", "ok")
+    mlflow.log_metric("latency_ms", 123)
+```
+
+Open the UI:
+👉 [http://127.0.0.1:8080](http://127.0.0.1:8080)
+
+You should see the test run.
+
+---
+
+## 🐳 5. Optional – Docker Compose
+
+If the team prefers a containerized environment, add:
+
+```yaml
+# docker-compose.yml
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mlruns:/mlruns
+      - ./mlflow.db:/mlflow.db
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 8080
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlruns
+```
+
+Start it:
+
+```bash
+docker compose up -d
+```
+
 ### Run Migration
 
 ```bash
