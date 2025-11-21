@@ -1,123 +1,142 @@
-"""
-EngineeringStore Input Builder
-
-Builds stdin (interactive input) sequences for the engineeringstore CLI,
-used for creating template files for Hopsflow (BRZ/SLV) or Brewtiful (GLD).
-
-Applies Strategy + Factory pattern to keep input logic clean and scalable.
-"""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Dict
 
-# ======================================================
-#   Strategy Interface
-# ======================================================
-
 
 class EngineeringStoreInputStrategy(ABC):
-    """
-    Strategy interface for building STDIN input sequences for engineeringstore.
-    """
-
     @abstractmethod
-    def build(self, schema: Dict) -> str:
+    def build(self, schema: Dict, metadata: Dict) -> str:
         pass
 
 
-# ======================================================
-#   Strategy 1: Hopsflow (BRZ / SLV)
-# ======================================================
-
-
-class HopsflowInputStrategy(EngineeringStoreInputStrategy):
+class HopsflowBRZInputStrategy(EngineeringStoreInputStrategy):
     """
-    Builds inputs for:
-        engineeringstore ingestion --create-template-files
+    engineeringstore ingestion --create-template-files
+    BRZ variant: no transformations
     """
 
-    def build(self, schema: Dict) -> str:
-        return (
-            "\n".join(
-                [
-                    schema.get("zone", "maz"),
-                    schema.get("country", "co"),
-                    schema.get("dataset_name", schema.get("pipeline_name", "unknown_dataset")),
-                    schema.get("domain", "unknown_domain"),
-                    schema.get("layer", "brz"),  # brz or slv
-                    schema.get("owner_team", "platform"),
-                    schema.get("schedule_interval", "* * * * *"),
-                ]
-            )
-            + "\n"
-        )
+    def build(self, schema: Dict, metadata: Dict) -> str:
+        zone = schema.get("zone", "maz")
+        landing_zone = schema.get("landing_zone", zone)
+        country = schema.get("country", "/n")
+        domain = schema.get("domain", "unknown")
+        pipeline = metadata.get("pipeline_name", "unknown_pipeline")
+        schedule = schema.get("schedule", "* * * * *")
+        table_name = schema.get("table_name", "raw_table")
+        owner = schema.get("owner", "platform")
+        connector = schema.get("connector", "blob")
+        source_system = schema.get("source_system", "sap")
+        source_entity = schema.get("source_entity", "sap")
+        target_entity = schema.get("target_entity", "sap")
+        connection_id = schema.get("connection_id", "sap-secret")
+        acl = schema.get("acl", "n")
+
+        return f"""\
+{zone}
+{landing_zone}
+{country}
+{domain}
+{pipeline}
+{schedule}
+{table_name}
+{owner}
+{connector}
+{source_system}
+{source_entity}
+{target_entity}
+{connection_id}
+n{acl}
+"""
 
 
-# ======================================================
-#   Strategy 2: Brewtiful (GLD)
-# ======================================================
-
-
-class BrewtifulInputStrategy(EngineeringStoreInputStrategy):
+class HopsflowSLVInputStrategy(EngineeringStoreInputStrategy):
     """
-    Builds inputs for:
-        engineeringstore transformation --create-template-files
+    engineeringstore ingestion --create-template-files
+    SLV variant: supports transformations
     """
 
-    def build(self, schema: Dict) -> str:
-        return (
-            "\n".join(
-                [
-                    schema.get("zone", "maz"),
-                    schema.get("landing_zone", schema.get("zone", "maz")),
-                    schema.get("country", "co"),
-                    schema.get("domain", "unknown"),
-                    schema.get("pipeline_name", "unknown_pipeline"),
-                    schema.get("schedule_interval", "* * * * *"),
-                    schema.get("task_name", "default_task"),
-                    schema.get("owner_team", "platform"),
-                    schema.get("scope", "transformation"),
-                    schema.get("sub_domain", "general"),
-                    schema.get("data_product", "default"),
-                    "yes",  # create ACL yaml?
-                    "no",  # create Trigger yaml?
-                ]
-            )
-            + "\n"
-        )
+    def build(self, schema: Dict, metadata: Dict) -> str:
+        zone = schema.get("zone", "maz")
+        landing_zone = schema.get("landing_zone", zone)
+        country = schema.get("country", "/n")
+        domain = schema.get("domain", "unknown")
+        pipeline = metadata.get("pipeline_name", "unknown_pipeline")
+        schedule = schema.get("schedule", "* * * * *")
+        table_name = schema.get("table_name", "raw_table")
+        owner = schema.get("owner", "platform")
+        connector = schema.get("connector", "blob")
+        source_system = schema.get("source_system", "sap")
+        source_entity = schema.get("source_entity", "sap")
+        target_entity = schema.get("target_entity", "sap")
+        connection_id = schema.get("connection_id", "sap-secret")
+        transformations = schema.get("transformations", "y")
+        acl = schema.get("acl", "n")
+
+        return f"""\
+{zone}
+{landing_zone}
+{country}
+{domain}
+{pipeline}
+{schedule}
+{table_name}
+{owner}
+{connector}
+{source_system}
+{source_entity}
+{target_entity}
+{connection_id}
+{transformations}{acl}
+"""
 
 
-# ======================================================
-#   Factory — selects Strategy based on environment
-# ======================================================
+class BrewtifulGLDInputStrategy(EngineeringStoreInputStrategy):
+    """
+    engineeringstore transformation --create-template-files
+    GOLD transformation prompts
+    """
+
+    def build(self, schema: Dict, metadata: Dict) -> str:
+        zone = schema.get("zone", "maz")
+        landing_zone = schema.get("landing_zone", zone)
+        country = schema.get("country", "mz")
+        domain = schema.get("domain", "unknown")
+        pipeline = metadata.get("pipeline_name", "unknown_pipeline")
+        schedule = schema.get("schedule", "* * * * *")
+        table_name = schema.get("table_name", "feature_table")
+        owner = schema.get("owner", "platform")
+        table_scope = schema.get("table_scope", "transformation")
+        data_product_subdomain = schema.get("data_product_subdomain", "default")
+        acl = schema.get("acl", "n")
+        trigger = schema.get("trigger", "n")
+
+        return f"""\
+{zone}
+{landing_zone}
+{country}
+{domain}
+{pipeline}
+{schedule}
+{table_name}
+{owner}
+{table_scope}
+
+{data_product_subdomain}
+{acl}{trigger}
+"""
 
 
 class EngineeringStoreInputBuilderFactory:
-    """
-    Factory that creates the correct input-building strategy
-    depending on the environment (brz/slv/gld).
-    """
-
     @staticmethod
     def get(environment: str) -> EngineeringStoreInputStrategy:
-        if environment in ("brz", "slv"):
-            return HopsflowInputStrategy()
-        return BrewtifulInputStrategy()
+        if environment == "brz":
+            return HopsflowBRZInputStrategy()
+        if environment == "slv":
+            return HopsflowSLVInputStrategy()
+        return BrewtifulGLDInputStrategy()
 
 
-# ======================================================
-#   Public API
-# ======================================================
-
-
-def build_engineeringstore_inputs(schema: Dict, environment: str) -> str:
-    """
-    Unified entry point for TemplateCreator ToolNode.
-
-    Returns a newline-separated string with all CLI STDIN inputs
-    required by engineeringstore.
-    """
+def build_engineeringstore_inputs(schema: Dict, metadata: Dict, environment: str) -> str:
     strategy = EngineeringStoreInputBuilderFactory.get(environment)
-    return strategy.build(schema)
+    return strategy.build(schema, metadata)
