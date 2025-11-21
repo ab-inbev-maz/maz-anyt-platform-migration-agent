@@ -12,9 +12,6 @@ from brewbridge.utils.exceptions import (EngineeringStoreExecutionError,
                                          EngineeringStoreNotInstalledError,
                                          EngineeringStoreTimeoutError)
 
-dotenv.load_dotenv()
-
-
 @dataclass(frozen=True)
 class EngineeringStoreCommand:
     """
