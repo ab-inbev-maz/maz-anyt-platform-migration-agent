@@ -1,5 +1,42 @@
+from io import BytesIO
+
+from langchain_core.runnables.graph import MermaidDrawMethod
+from PIL import Image
+
+from brewbridge.core.graph_builder import MigrationGraphBuilder
+from brewbridge.core.state import MigrationGraphState
+from brewbridge.infrastructure.logger import get_logger
+
+
 def main():
-    print("Hello from brewbridge!")
+    logger = get_logger("brewbridge")
+
+    initial_state = {
+        "environment_type": "gld",
+        "normalized_schema_v4": {
+            "zone": "maz",
+            "country": "co",
+            "domain": "sales",
+            "owner": "platform",
+            "schedule": "* * 2 * *",
+        },
+        "current_pipeline_data": {"pipeline_name": "test_pipeline_x"},
+    }
+
+    builder = MigrationGraphBuilder(logger=logger).build()
+    runnable = builder.compile()
+
+    png_bytes = runnable.get_graph().draw_mermaid_png(
+        draw_method=MermaidDrawMethod.API, output_file_path="migration_flow.png"
+    )
+
+    img = Image.open(BytesIO(png_bytes))
+    img.show()
+
+    final_state = runnable.invoke(initial_state)
+    final_state_obj = MigrationGraphState(**final_state)
+
+    logger.info(f"Final state: {final_state_obj}")
 
 
 if __name__ == "__main__":

@@ -1,41 +1,30 @@
-from typing import Dict, Literal
+from langgraph.graph import END, START, StateGraph
 
-from langgraph.graph import END, StateGraph
-from src.state import MigrationGraphState
-
-
-def node_read_manifest(state: MigrationGraphState) -> Dict:
-    print("\n--- [Paso 1] READ MANIFEST (MOCK) ---")
-    return {
-        "api_connectivity_ok": True,
-        "current_pipeline_data": {"name": "pipe_brz_ventas", "type": "bronze"},
-    }
+from brewbridge.core.state import MigrationGraphState
+from brewbridge.domain.tools.template_creator import template_creator_node
+from brewbridge.infrastructure.logger import get_logger
 
 
-def node_framework_creator(state: MigrationGraphState) -> Dict:
-    print("--- [Paso 2] FRAMEWORK CREATOR (MOCK) ---")
-    mock_env = "brz"
-    print(f"    Detected environment: {mock_env}")
-    return {
-        "environment_type": mock_env,
-        "pipeline_template": "plantilla_hopsflow_mock",
-        "transform_template": "plantilla_transform_mock",
-    }
+class MigrationGraphBuilder:
+    def __init__(self, logger=None):
+        self.logger = logger or get_logger(__name__)
+        self.nodes = {}
+        self.edges = {}
+        self.start_node = None
 
+    def build(self):
+        self.nodes["template_creator"] = template_creator_node
+        self.start_node = "template_creator"
+        self.edges = {
+            START: "template_creator",
+            "template_creator": END,
+        }
+        return self
 
-def node_extractor(state: MigrationGraphState) -> Dict:
-    print("--- [Paso 3] EXTRACTOR (MOCK) ---")
-    return {"raw_artifacts_3_0": {"adf": "{}", "notebook": "print('hola mundo')"}}
-
-
-def node_schema_normalizer(state: MigrationGraphState) -> Dict:
-    print("--- [Paso 4] 🧠 SCHEMA NORMALIZER (MOCK AI) ---")
-    return {"normalized_schema_v4": {"mock_key": "mock_value"}}
-
-
-def router_translators(state: MigrationGraphState) -> Literal["route_hopsflow", "route_brewtiful"]:
-    env = state.get("environment_type")
-    print(f"--- [Paso 5] 🔀 ROUTER: Decidiendo ruta para '{env}' ---")
-    if env in ["brz", "slv"]:
-        return "route_hopsflow"
-    return "route_brewtiful"
+    def compile(self):
+        graph = StateGraph(MigrationGraphState)
+        for name, func in self.nodes.items():
+            graph.add_node(name, func)
+        for src, dst in self.edges.items():
+            graph.add_edge(src, dst)
+        return graph.compile()

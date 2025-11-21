@@ -79,3 +79,14 @@ class AgentRoutingError(BrewBridgeError):
     """Raised when the router cannot determine the correct next translator."""
 
     pass
+
+
+# ============================================================
+# Templates Creation Exceptions
+# ============================================================
+
+
+class TemplateCreationError(BrewBridgeError):
+    """Raised when the TemplateCreator fails to generate template files."""
+
+    pass
