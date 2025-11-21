@@ -15,10 +15,16 @@ def main():
         "environment_type": "gld",
         "normalized_schema_v4": {
             "zone": "maz",
+            "landing_zone": "maz",
             "country": "co",
             "domain": "sales",
             "owner": "platform",
             "schedule": "* * 2 * *",
+            "table_scope": "transformation",
+            "data_product_subdomain": "promo",
+            "table_type": "feature_store",
+            "acl": "y",
+            "trigger": "n"
         },
         "current_pipeline_data": {"pipeline_name": "test_pipeline_x"},
     }
