@@ -5,7 +5,6 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional
 
-import dotenv
 
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.utils.exceptions import (EngineeringStoreExecutionError,

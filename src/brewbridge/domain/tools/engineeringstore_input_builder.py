@@ -19,7 +19,7 @@ class HopsflowBRZInputStrategy(EngineeringStoreInputStrategy):
     def build(self, schema: Dict, metadata: Dict) -> str:
         zone = schema.get("zone", "maz")
         landing_zone = schema.get("landing_zone", zone)
-        country = schema.get("country", "/n")
+        country = schema.get("country", "")
         domain = schema.get("domain", "unknown")
         pipeline = metadata.get("pipeline_name", "unknown_pipeline")
         schedule = schema.get("schedule", "* * * * *")
@@ -59,7 +59,7 @@ class HopsflowSLVInputStrategy(EngineeringStoreInputStrategy):
     def build(self, schema: Dict, metadata: Dict) -> str:
         zone = schema.get("zone", "maz")
         landing_zone = schema.get("landing_zone", zone)
-        country = schema.get("country", "/n")
+        country = schema.get("country", "")
         domain = schema.get("domain", "unknown")
         pipeline = metadata.get("pipeline_name", "unknown_pipeline")
         schedule = schema.get("schedule", "* * * * *")
