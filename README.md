@@ -58,128 +58,85 @@ This pattern isolates framework-specific logic while keeping the extraction flow
 
 ```plaintext
 .
-├── README.md
-├── LICENSE
-├── pyproject.toml
+├── .env
 ├── .env.example
 ├── .gitignore
-│
-├── inputs/
-│   ├── manifest.yaml
-│   └── samples/
-│       ├── adf_pipeline.json
-│       ├── notebook_sample.py
-│       └── cobos_query.sql
-│
-├── outputs/
-│   ├── 2025-11-08_pipeline_x/
-│   │   ├── raw_artifacts/
-│   │   │   ├── adf_pipeline.json
-│   │   │   └── notebook_source.py
-│   │   ├── normalized_schema_v4.json
-│   │   ├── acl.yaml
-│   │   ├── metadata.yaml
-│   │   ├── quality.yaml
-│   │   ├── sync.yaml
-│   │   ├── observability.yaml
-│   │   ├── pipeline.yaml
-│   │   ├── transformations.yaml
-│   │   ├── migration_summary.md
-│   │   └── logs/
-│   │       └── validator_output.txt
-│   └── ...
-│
-├── cache/
-│   ├── brewtiful/
-│   └── hopsflow/
-│
-└── src/
-    └── brewbridge/
-        ├── __init__.py
-        ├── main.py
-        ├── config.py
-        │
-        ├── core/
-        │   ├── graph_builder.py
-        │   ├── state.py
-        │   ├── base_nodes.py           # ToolNode, AgentNode, HumanNode
-        │   ├── runner.py
-        │   ├── callbacks.py
-        │   └── __init__.py
-        │
-        ├── domain/
-        │   ├── tools/
-        │   │   ├── read_manifest.py
-        │   │   ├── framework_creator.py
-        │   │   ├── extractor/                # Extractor ToolNodes
-        │   │   │   ├── extractor_tool_v3.py  # Step 3 - 3.0
-        │   │   │   ├── extractor_tool_cobos.py
-        │   │   │   └── __init__.py
-        │   │   ├── router_tool.py
-        │   │   ├── validator_tool.py
-        │   │   ├── generator.py
-        │   │   ├── ruff_formatter.py
-        │   │   └── __init__.py
-        │   │
-        │   ├── extractor_strategies/         # Deterministic Strategy Pattern
-        │   │   ├── base_strategy.py
-        │   │   ├── framework_3_0_strategy.py
-        │   │   ├── cobos_strategy.py
-        │   │   └── __init__.py
-        │   │
-        │   ├── agents/
-        │   │   ├── schema_normalizer.py
-        │   │   ├── corrector_agent.py
-        │   │   ├── reporter_logger.py
-        │   │   ├── translators/
-        │   │   │   ├── acl_translator.py
-        │   │   │   ├── metadata_translator.py
-        │   │   │   ├── quality_translator.py
-        │   │   │   ├── sync_translator.py
-        │   │   │   ├── observability_translator.py
-        │   │   │   ├── pipeline_translator.py           # Hopsflow only
-        │   │   │   ├── transformations_translator.py    # Hopsflow only
-        │   │   │   ├── notebook_translator.py           # Brewtiful only
-        │   │   │   └── __init__.py
-        │   │   └── __init__.py
-        │   │
-        │   ├── humans/
-        │   │   ├── approval_node.py
-        │   │   └── decision_node.py
-        │   │
-        │   └── __init__.py
-        │
-        ├── infra/
-        │   ├── github_client.py
-        │   ├── datafactory_client.py      # optional, if still used
-        │   ├── engineeringstore_cli.py
-        │   ├── storage_manager.py
-        │   ├── logger.py
-        │   └── __init__.py
-        │
-        ├── prompts/
-        │   ├── schema_normalizer_prompt.py
-        │   ├── corrector_agent_prompt.py
-        │   ├── reporter_logger_prompt.py
-        │   └── translators/
-        │       ├── acl_prompt.py
-        │       ├── metadata_prompt.py
-        │       ├── quality_prompt.py
-        │       ├── sync_prompt.py
-        │       ├── observability_prompt.py
-        │       ├── pipeline_prompt.py
-        │       ├── transformations_prompt.py
-        │       ├── notebook_prompt.py
-        │       └── __init__.py
-        │
-        ├── utils/
-        │   ├── file_utils.py
-        │   ├── yaml_utils.py
-        │   ├── retry_utils.py
-        │   ├── exceptions.py
-        │   └── __init__.py
-        │
-        └── __init__.py
+├── .python-version
+├── cache
+│   ├── brewtiful
+│   │   └── .gitkeep
+│   └── hopsflow
+│       └── .gitkeep
+├── inputs
+│   ├── .gitkeep
+│   └── samples
+│       ├── normalized_ingestion_logistics_single_task.json
+│       └── normalized_ingestion_sales_multi_task.json
+├── LICENSE
+├── migration_flow.png
+├── outputs
+│   ├── .gitkeep
+│   └── 2025-11-08_pipeline_x
+│       └── raw_artifacts
+│           └── .gitkeep
+├── pyproject.toml
+├── README.md
+├── RFC.md
+├── src
+│   └── brewbridge
+│       ├── __init__.py
+│       ├── config.py
+│       ├── core
+│       │   ├── __init__.py
+│       │   ├── base_nodes.py
+│       │   ├── graph_builder.py
+│       │   └── state.py
+│       ├── domain
+│       │   ├── __init__.py
+│       │   ├── agents
+│       │   │   ├── __init__.py
+│       │   │   └── translators
+│       │   │       └── __init__.py
+│       │   ├── extractor_strategies
+│       │   │   ├── __init__.py
+│       │   │   ├── cobos_strategy.py
+│       │   │   └── framework_3_0_strategy.py
+│       │   └── tools
+│       │       ├── __init__.py
+│       │       ├── engineeringstore_input_builder.py
+│       │       ├── extractor
+│       │       │   ├── __init__.py
+│       │       │   └── 3.0
+│       │       │       └── __init__.py
+│       │       └── template_creator.py
+│       ├── humans
+│       │   └── __init__.py
+│       ├── infrastructure
+│       │   ├── __init__.py
+│       │   ├── engineeringstore_cli.py
+│       │   └── logger.py
+│       ├── main.py
+│       ├── prompts
+│       │   ├── __init__.py
+│       │   ├── schema_normalizer.md
+│       │   └── translators
+│       │       └── __init__.py
+│       └── utils
+│           ├── __init__.py
+│           └── exceptions.py
+├── tests
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── integration
+│   │   └── __init__.py
+│   ├── manual
+│   │   └── test_engineeringstore_cli_transformation_ingestion.py
+│   └── unit
+│       ├── __init__.py
+│       ├── test_extraction.py
+│       └── test_normalization.py
+├── tree.md
+└── uv.lock
 
 ````
 
@@ -192,6 +149,122 @@ This pattern isolates framework-specific logic while keeping the extraction flow
 ```bash
 uv sync
 uv pip install -e .
+```
+
+Aquí tienes la sección **limpia, final y perfecta**, sin los puntos 6 y 7.
+Lista para pegar directo en tu README.
+
+---
+
+# 📊 MLflow Local Observability Setup
+
+To enable the new **Observability Layer**, every developer must run a **local MLflow Tracking Server**.
+This ensures a consistent environment for inspecting traces, artifacts, metrics, YAML diffs, and node-level behaviors across the entire BrewBridge migration flow.
+
+This setup is lightweight, reproducible, and fully aligned with the team’s local development workflow.
+
+---
+
+## 🔧 1. Install Dependencies (via `uv`)
+
+All MLflow dependencies are already defined in the project configuration.
+
+Every developer simply needs to run:
+
+```bash
+uv sync
+```
+
+This installs MLflow and all required observability packages into the virtual environment.
+
+---
+
+## 🚀 2. Start the Local MLflow Tracking Server
+
+From the project root:
+
+```bash
+mlflow server \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --backend-store-uri sqlite:///mlflow.db \
+  --default-artifact-root ./mlruns
+```
+
+This launches:
+
+* **SQLite** → local metadata storage
+* `./mlruns/` → artifact store
+* MLflow UI → [http://127.0.0.1:8080](http://127.0.0.1:8080)
+
+> Every developer runs this locally.
+> Zero cloud dependency. No credentials required. Full autonomy.
+
+---
+
+## 🏷️ 3. Configure BrewBridge to Log to Local MLflow
+
+Add this to your local `.env` (ignored by Git):
+
+```
+MLFLOW_TRACKING_URI=http://127.0.0.1:8080
+MLFLOW_EXPERIMENT_NAME=brewbridge_observability
+```
+
+The observability layer will automatically route all traces and metrics to your local MLflow instance.
+
+---
+
+## 🧪 4. Validate the Setup
+
+Run:
+
+```python
+import dotenv
+import mlflow
+
+load_dotenv()
+
+print("Tracking:", mlflow.get_tracking_uri())
+
+with mlflow.start_run():
+    mlflow.log_param("env_test", "ok")
+    mlflow.log_metric("latency_ms", 123)
+```
+
+Open the UI:
+👉 [http://127.0.0.1:8080](http://127.0.0.1:8080)
+
+You should see the test run.
+
+---
+
+## 🐳 5. Optional – Docker Compose
+
+If the team prefers a containerized environment, add:
+
+```yaml
+# docker-compose.yml
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mlruns:/mlruns
+      - ./mlflow.db:/mlflow.db
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 8080
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlruns
+```
+
+Start it:
+
+```bash
+docker compose up -d
 ```
 
 ### Run Migration
