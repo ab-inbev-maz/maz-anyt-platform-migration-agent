@@ -8,69 +8,61 @@ from brewbridge.infrastructure.logger import get_logger
 logger = get_logger("TEST_INFRA")
 
 def main():
-    
     load_dotenv()
     token = os.getenv("GITHUB_TOKEN")
-    base_url = os.getenv("BASE_URL_GITHUB")
 
     print("\n" + "="*50)
-    print("🚀 INICIANDO PRUEBA DE INFRAESTRUCTURA")
+    print("STARTING INFRASTRUCTURE TEST")
     print("="*50)
 
     if not token:
-        logger.error("No se encontró GITHUB_TOKEN en .env")
+        logger.error("No GITHUB_TOKEN found in .env")
         return
 
-    # 2. Inicializar Cliente
-    logger.info("Intentando inicializar GitHubClient...")
+    # Initialize Client
+    logger.info("Trying to initialize GitHubClient...")
     try:
         client = GitHubClient(token=token)
     except GitHubAuthError:
-        logger.error("El cliente rechazó el token inmediatamente.")
+        logger.error("The client rejected the token immediately.")
         return
 
-    logger.info(">>> Ejecutando PING...")
+    logger.info(">>> Executing PING...")
     if client.ping():
-        logger.info("✅ PING EXITOSO: Conexión establecida.")
+        logger.info(" SUCCESSFUL PING: Connection established.")
     else:
-        logger.error("❌ PING FALLIDO.")
+        logger.error(" PING FAILED.")
         return
 
-    # Prueba de Lectura de Archivo
-    # Usaremos un repo público de prueba para garantizar que funcione
-    # Si quieres probar tu repo privado, cambia estas variables:
-    #repo = "octocat/Hello-World" 
-    #path = "README"
-    
-    # OPCIONAL: Descomenta esto para probar tu repo privado de AB InBev
+    # File Read Test
     repo = "BrewDat/brewdat-maz-maz-masterdata-sap-repo-adf" 
     path = "trigger/tr_slv_maz_masterdata_customer_sap_dop_do_d_0100.json"
 
-    logger.info(f">>> Intentando leer '{path}' de '{repo}'...")
+    logger.info(f">>> Trying to read '{path}' from '{repo}'...")
     try:
         content = client.get_file(repo=repo, path=path)
-        print("\n📄 CONTENIDO DESCARGADO:")
+        print("\n DOWNLOADED CONTENT:")
         print("-" * 20)
         print(content[:500] + "..." if len(content) > 500 else content)
         print("-" * 20 + "\n")
-        logger.info("✅ LECTURA DE ARCHIVO EXITOSA.")
+        logger.info(" FILE READ SUCCESSFUL.")
 
     except GitHubAuthError:
-        logger.error("⛔ Error de Permisos (401/403). Tu token sirve, pero no para este repo.")
+        logger.error(" Permission Error (401/403). Your token works, but not for this repo.")
     except GitHubRequestError as e:
-        logger.warning(f"⚠️ No se pudo leer el archivo: {e}")
+        logger.warning(f" Could not read the file: {e}")
 
-    # 5. Prueba de Listar Directorio (Si agregaste el método list_directory)
+    # Directory Listing Test
     if hasattr(client, "list_directory"):
-        logger.info(f">>> Listando raíz de '{repo}'...")
+        logger.info(f">>> Listing root of '{repo}'...")
         try:
             items = client.list_directory(repo, "")
-            print(f"\n📂 Archivos encontrados ({len(items)}):")
+            print(f"\n Files found ({len(items)}):")
             for item in items[:5]:
                 print(f" - [{item['type']}] {item['name']}")
-            logger.info("✅ LISTADO DE DIRECTORIO EXITOSO.")
+            logger.info(" DIRECTORY LISTING SUCCESSFUL.")
         except Exception as e:
-            logger.error(f"❌ Fallo al listar: {e}")
+            logger.error(f" Failed to list: {e}")
 
 if __name__ == "__main__":
     main()

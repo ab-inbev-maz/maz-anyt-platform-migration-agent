@@ -1,5 +1,6 @@
 import base64
-import os
+import requests
+from brewbridge.utils.constans import ConstansLibrary
 from requests import Response, Session
 from typing import List, Dict
 from brewbridge.utils.exceptions import GitHubAuthError, GitHubRequestError
@@ -11,9 +12,9 @@ class GitHubClient:
     Handles authenticated communication with the GitHub REST API.
     Encapsulates session management, authentication, and error handling.
     """
-    BASE_URL = os.getenv("BASE_URL_GITHUB", "https://api.github.com")
-    ACCEPT_HEADER = os.getenv("ACCEPT_HEADER", "application/vnd.github.v3+json")
-    API_VERSION_HEADER = os.getenv("API_VERSION_HEADER", "2022-11-28")
+    BASE_URL = ConstansLibrary.GITHUB_API_URL
+    ACCEPT_HEADER = ConstansLibrary.GITHUB_ACCEPT_HEADER
+    API_VERSION_HEADER = ConstansLibrary.GITHUB_API_VERSION 
 
     def __init__(self, token: str):
         if not token:
@@ -126,7 +127,6 @@ class GitHubClient:
                 logger.warning(f"Path {path} is a file, not a directory.")
                 return []
 
-            # Simplificamos la respuesta para el uso interno
             items = [
                 {
                     "name": item["name"],
