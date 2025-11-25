@@ -1,21 +1,19 @@
 import base64
-import requests
 import os
 from requests import Response, Session
-from loguru import logger
+from typing import List, Dict
 from brewbridge.utils.exceptions import GitHubAuthError, GitHubRequestError
+from brewbridge.infrastructure.logger import get_logger
 
-# uv add requests
-# uv add loguru
-
+logger = get_logger(__name__)
 class GitHubClient:
     """
     Handles authenticated communication with the GitHub REST API.
     Encapsulates session management, authentication, and error handling.
     """
-    BASE_URL_GITHUB = os.getenv("BASE_URL_GITHUB")
-    ACCEPT_HEADER = os.getenv("ACCEPT_HEADER")
-    API_VERSION_HEADER = os.getenv("API_VERSION_HEADER")
+    BASE_URL = os.getenv("BASE_URL_GITHUB", "https://api.github.com")
+    ACCEPT_HEADER = os.getenv("ACCEPT_HEADER", "application/vnd.github.v3+json")
+    API_VERSION_HEADER = os.getenv("API_VERSION_HEADER", "2022-11-28")
 
     def __init__(self, token: str):
         if not token:
@@ -26,7 +24,7 @@ class GitHubClient:
         self.session.headers.update({
             "Authorization": f"Bearer {token}",
             "Accept": self.ACCEPT_HEADER,
-            "X-GitHub-Api-Version": self.API_VERSION_HEADER # Falta mirar si es util
+            "X-GitHub-Api-Version": self.API_VERSION_HEADER 
         })
         logger.debug("GitHubClient initialized successfully.")
 
@@ -36,7 +34,7 @@ class GitHubClient:
         """
         logger.debug("Pinging GitHub API (/user) to validate token...")
         try:
-            res: Response = self.session.get(f"{self.BASE_URL_GITHUB}/user", timeout=10)
+            res: Response = self.session.get(f"{self.BASE_URL}/user", timeout=10)
             
             if res.status_code == 200:
                 logger.info("GitHub API ping successful.")
@@ -61,7 +59,7 @@ class GitHubClient:
         :param branch: Branch or ref to pull from (defaults to 'main').
         :return: Decoded string content of the file.
         """
-        url = f"{self.BASE_URL_GITHUB}/repos/{repo}/contents/{path}?ref={branch}"
+        url = f"{self.BASE_URL}/repos/{repo}/contents/{path}?ref={branch}"
         logger.debug(f"Fetching file: {repo}/{path} @ {branch}")
 
         try:
@@ -78,12 +76,12 @@ class GitHubClient:
                  raise GitHubRequestError(f"File not found: {path} in {repo}@{branch}")
             
             # Handle other HTTP errors
-            res.raise_for_status() # Raises HTTPError for 4xx/5xx responses not caught above
+            res.raise_for_status() 
 
             data = res.json()
-            if "content" not in data:
-                logger.warning(f"API response for {url} did not contain 'content'. It might be a directory.")
-                raise GitHubRequestError(f"Path is a directory or content is missing: {path}")
+            if isinstance(data, list) or "content" not in data:
+                logger.warning(f"Path '{path}' points to a directory, not a file.")
+                raise GitHubRequestError(f"Path is a directory, use list_directory instead: {path}")
 
             # Decode Base64 content
             content_b64 = data["content"]
@@ -101,3 +99,45 @@ class GitHubClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"GitHub get_file request failed: {e}")
             raise GitHubRequestError(f"Network error getting file: {e}")
+        
+    def list_directory(self, repo: str, path: str, branch: str = "main") -> List[Dict]:
+        """
+        List files and directories in a specific path.
+        Required for Strategies to discover files (e.g. "Find all JSONs in /pipelines").
+        """
+        url = f"{self.BASE_URL}/repos/{repo}/contents/{path}?ref={branch}"
+        logger.debug(f"Listing directory: {repo}/{path} @ {branch}")
+
+        try:
+            res: Response = self.session.get(url, timeout=10)
+
+            if res.status_code in [401, 403]:
+                raise GitHubAuthError(f"Permission denied for {repo}")
+            
+            if res.status_code == 404:
+                logger.warning(f"Directory not found: {path}")
+                return [] 
+
+            res.raise_for_status()
+            
+            data = res.json()
+            
+            if not isinstance(data, list):
+                logger.warning(f"Path {path} is a file, not a directory.")
+                return []
+
+            # Simplificamos la respuesta para el uso interno
+            items = [
+                {
+                    "name": item["name"],
+                    "path": item["path"],
+                    "type": item["type"], 
+                    "download_url": item.get("download_url")
+                }
+                for item in data
+            ]
+            return items
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to list directory {path}: {e}")
+            raise GitHubRequestError(f"Network error listing directory: {e}")
