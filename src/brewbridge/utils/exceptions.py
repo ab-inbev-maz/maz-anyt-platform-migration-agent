@@ -1,17 +1,24 @@
 """
-Domain-level exceptions for the BrewBridge / Migration Agent project.
-
 These exceptions standardize error signaling across:
 - EngineeringStore CLI wrapper
 - Workflow orchestration (LangGraph)
 """
-
 
 class BrewBridgeError(Exception):
     """Base class for all custom project exceptions."""
 
     pass
 
+# ============================================================
+# GitHub Client Exceptions
+# ============================================================
+class GitHubAuthError(Exception):
+    """Exception for 401/403 errors."""
+    pass
+
+class GitHubRequestError(Exception):
+    """General exception for GitHub request failures."""
+    pass
 
 # ============================================================
 # EngineeringStore CLI Exceptions
