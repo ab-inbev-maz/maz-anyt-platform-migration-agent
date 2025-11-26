@@ -9,11 +9,13 @@ from brewbridge.domain.tools.engineeringstore_input_builder import \
 from brewbridge.infrastructure.engineeringstore_cli import (
     EngineeringStoreCLI, EngineeringStoreCommand)
 from brewbridge.infrastructure.logger import get_logger
+from brewbridge.infrastructure.observability import track_node
 from brewbridge.utils.exceptions import TemplateCreationError
 
 logger = get_logger(__name__)
 
 
+@track_node("tool")
 @tool_node
 def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
     try:

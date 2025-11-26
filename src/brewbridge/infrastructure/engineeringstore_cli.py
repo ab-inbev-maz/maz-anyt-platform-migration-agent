@@ -5,11 +5,12 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional
 
-
 from brewbridge.infrastructure.logger import get_logger
+from brewbridge.infrastructure.observability import log_cli_output
 from brewbridge.utils.exceptions import (EngineeringStoreExecutionError,
                                          EngineeringStoreNotInstalledError,
                                          EngineeringStoreTimeoutError)
+
 
 @dataclass(frozen=True)
 class EngineeringStoreCommand:
@@ -84,6 +85,8 @@ class EngineeringStoreCLI:
 
         stdout = process.stdout or ""
         stderr = process.stderr or ""
+
+        log_cli_output(stdout=stdout, stderr=stderr)
 
         debug_env = os.environ.get("DEBUG", "false").lower() == "true"
         if debug_env:
