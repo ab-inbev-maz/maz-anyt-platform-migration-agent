@@ -211,3 +211,5 @@ cache/
 .vscode/
 mlruns/
 mlflow.db
+mlartifacts/
+cursor.json
