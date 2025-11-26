@@ -20,6 +20,10 @@ class GitHubRequestError(Exception):
     """General exception for GitHub request failures."""
     pass
 
+class RepositoryCloneError(BrewBridgeError):
+    """Raised when a repository fails to clone or update."""
+    pass
+
 # ============================================================
 # EngineeringStore CLI Exceptions
 # ============================================================
