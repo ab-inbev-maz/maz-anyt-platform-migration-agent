@@ -7,9 +7,11 @@ from typing import List, Optional
 
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.infrastructure.observability import log_cli_output
-from brewbridge.utils.exceptions import (EngineeringStoreExecutionError,
-                                         EngineeringStoreNotInstalledError,
-                                         EngineeringStoreTimeoutError)
+from brewbridge.utils.exceptions import (
+    EngineeringStoreExecutionError,
+    EngineeringStoreNotInstalledError,
+    EngineeringStoreTimeoutError,
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class EngineeringStoreCommand:
                 - "brz" or "slv": routes to the hopsflow repository.
         needs_input (bool): Whether the command expects input via stdin.
     """
+
     command: List[str]
     table_type: str
     needs_input: bool = False
@@ -32,6 +35,7 @@ class EngineeringStoreCommand:
 
 class EngineeringStoreCLI:
     """Facade wrapper responsible for executing `engineeringstore` CLI commands."""
+
     def __init__(self, logger=None, timeout: int = 300):
         self.logger = logger or get_logger(__name__)
         self.timeout = timeout

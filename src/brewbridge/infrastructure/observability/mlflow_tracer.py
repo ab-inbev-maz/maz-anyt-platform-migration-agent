@@ -130,9 +130,7 @@ def track_node(node_type: str) -> Callable[[Callable[..., Any]], Callable[..., A
                 first_arg = args[0]
                 if isinstance(first_arg, Mapping):
                     state = first_arg
-            if state is None and "state" in kwargs and isinstance(
-                kwargs["state"], Mapping
-            ):
+            if state is None and "state" in kwargs and isinstance(kwargs["state"], Mapping):
                 state = kwargs["state"]
 
             base_tags: Dict[str, Any] = {
@@ -169,5 +167,3 @@ def track_node(node_type: str) -> Callable[[Callable[..., Any]], Callable[..., A
         return wrapper
 
     return decorator
-
-

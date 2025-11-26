@@ -73,9 +73,7 @@ def log_cli_output(stdout: str | None, stderr: str | None) -> None:
         mlflow.log_text(stderr, "cli_stderr.txt")
 
 
-def log_state_snapshot(
-    state: Mapping[str, Any], label: str = "state_snapshot"
-) -> None:
+def log_state_snapshot(state: Mapping[str, Any], label: str = "state_snapshot") -> None:
     """
     Log a compact JSON snapshot of the most relevant parts of the graph state.
 
@@ -99,11 +97,7 @@ def log_state_snapshot(
         "notebook_template",
     ]
 
-    snapshot: dict[str, Any] = {
-        key: state.get(key) for key in keys_of_interest if key in state
-    }
+    snapshot: dict[str, Any] = {key: state.get(key) for key in keys_of_interest if key in state}
 
     artifact_path = f"{label}.json"
     mlflow.log_text(json.dumps(snapshot, ensure_ascii=False, indent=2), artifact_path)
-
-

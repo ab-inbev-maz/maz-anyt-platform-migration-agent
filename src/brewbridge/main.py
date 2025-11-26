@@ -9,15 +9,14 @@ from PIL import Image
 from brewbridge.core.graph_builder import MigrationGraphBuilder
 from brewbridge.core.state import MigrationGraphState
 from brewbridge.infrastructure.logger import get_logger
-from brewbridge.infrastructure.observability import (end_pipeline_run,
-                                                     start_pipeline_run)
+from brewbridge.infrastructure.observability import end_pipeline_run, start_pipeline_run
 
 dotenv.load_dotenv()
 
-mlflow.set_tracking_uri(
-    os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:8080")
-)
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:8080"))
 
+
+# mlflow.langchain.autolog()
 def main():
     logger = get_logger("brewbridge")
 
@@ -26,27 +25,20 @@ def main():
         "normalized_schema_v4": {
             "zone": "maz",
             "landing_zone": "maz",
-
             "domain": "logistics",
             "pipeline": "test_ingestion_x",
             "schedule": "* * 2 * *",
             "table_name": "raw_logistics_orders",
-
             "owner": "platform",
             "connector": "blob",
-
             "source_system": "sap-test",
             "source_entity": "sap-test",
             "target_entity": "sap-test",
-
             "connection_id": "sap-test-secret",
-
             "transformations": "",
-            "acl": "yn"
+            "acl": "yn",
         },
-        "current_pipeline_data": {
-            "pipeline_name": "test_ingestion_x"
-        }
+        "current_pipeline_data": {"pipeline_name": "test_ingestion_x"},
     }
 
     # initial_state = {
