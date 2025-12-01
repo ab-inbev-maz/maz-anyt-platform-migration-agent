@@ -103,3 +103,20 @@ class TemplateCreationError(BrewBridgeError):
     """Raised when the TemplateCreator fails to generate template files."""
 
     pass
+
+
+# ============================================================
+# Manifest Exceptions
+# ============================================================
+
+
+class ManifestNotFoundError(BrewBridgeError):
+    """Raised when the manifest.yaml file is not found at the specified path."""
+
+    pass
+
+
+class ManifestParseError(BrewBridgeError):
+    """Raised when the manifest.yaml file cannot be parsed or validated."""
+
+    pass
