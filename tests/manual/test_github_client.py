@@ -7,13 +7,14 @@ from brewbridge.infrastructure.logger import get_logger
 
 logger = get_logger("TEST_INFRA")
 
+
 def main():
     load_dotenv()
     token = os.getenv("GITHUB_TOKEN")
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("STARTING INFRASTRUCTURE TEST")
-    print("="*50)
+    print("=" * 50)
 
     if not token:
         logger.error("No GITHUB_TOKEN found in .env")
@@ -35,7 +36,7 @@ def main():
         return
 
     # File Read Test
-    repo = "BrewDat/brewdat-maz-maz-masterdata-sap-repo-adf" 
+    repo = "BrewDat/brewdat-maz-maz-masterdata-sap-repo-adf"
     path = "trigger/tr_slv_maz_masterdata_customer_sap_dop_do_d_0100.json"
 
     logger.info(f">>> Trying to read '{path}' from '{repo}'...")
@@ -63,6 +64,7 @@ def main():
             logger.info(" DIRECTORY LISTING SUCCESSFUL.")
         except Exception as e:
             logger.error(f" Failed to list: {e}")
+
 
 if __name__ == "__main__":
     main()
