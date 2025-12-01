@@ -4,6 +4,7 @@ import sys
 from io import BytesIO
 
 import dotenv
+import mlflow
 from langchain_core.runnables.graph import MermaidDrawMethod
 from PIL import Image
 
@@ -198,6 +199,20 @@ def main():
         logger.info("No pipelines in manifest, using default test state")
         initial_state.environment_type = "brz"
         initial_state.normalized_schema_v4 = {
+from brewbridge.infrastructure.observability import end_pipeline_run, start_pipeline_run
+
+dotenv.load_dotenv()
+
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:8080"))
+
+
+# mlflow.langchain.autolog()
+def main():
+    logger = get_logger("brewbridge")
+
+    initial_state = {
+        "environment_type": "brz",
+        "normalized_schema_v4": {
             "zone": "maz",
             "landing_zone": "maz",
             "domain": "logistics",
@@ -260,7 +275,21 @@ def main():
     logger.info("Migration completed!")
     logger.info(f"Final state: {final_state_obj}")
     logger.info("=" * 60)
+    # Start a top-level MLflow run for this pipeline invocation.
+    start_pipeline_run(initial_state)
+
+    try:
+        final_state = runnable.invoke(initial_state)
+        final_state_obj = MigrationGraphState(**final_state)
+        logger.info("Final state: %s", final_state_obj)
+        end_pipeline_run(status="success")
+    except Exception:
+        # If something goes wrong at the graph level, make sure the pipeline
+        # run is still closed and marked as failed.
+        end_pipeline_run(status="error")
+        raise
 
 
 if __name__ == "__main__":
+    main()
     main()

@@ -4,16 +4,19 @@ import os
 
 from brewbridge.core.base_nodes import tool_node
 from brewbridge.core.state import MigrationGraphState
-from brewbridge.domain.tools.engineeringstore_input_builder import \
-    build_engineeringstore_inputs
+from brewbridge.domain.tools.engineeringstore_input_builder import build_engineeringstore_inputs
 from brewbridge.infrastructure.engineeringstore_cli import (
-    EngineeringStoreCLI, EngineeringStoreCommand)
+    EngineeringStoreCLI,
+    EngineeringStoreCommand,
+)
 from brewbridge.infrastructure.logger import get_logger
+from brewbridge.infrastructure.observability import track_node
 from brewbridge.utils.exceptions import TemplateCreationError
 
 logger = get_logger(__name__)
 
 
+@track_node("tool")
 @tool_node
 def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
     try:
@@ -37,16 +40,10 @@ def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
         )
 
         es_command = EngineeringStoreCommand(
-            command=command,
-            table_type="gold" if env == "gld" else env,
-            needs_input=True
+            command=command, table_type="gold" if env == "gld" else env, needs_input=True
         )
 
-        prompt = build_engineeringstore_inputs(
-            schema=schema,
-            metadata=metadata,
-            environment=env
-        )
+        prompt = build_engineeringstore_inputs(schema=schema, metadata=metadata, environment=env)
 
         cli.run(es_command, input_text=prompt)
 

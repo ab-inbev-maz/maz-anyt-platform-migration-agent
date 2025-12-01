@@ -7,26 +7,31 @@ from brewbridge.utils.exceptions import GitHubAuthError, GitHubRequestError
 from brewbridge.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
+
+
 class GitHubClient:
     """
     Handles authenticated communication with the GitHub REST API.
     Encapsulates session management, authentication, and error handling.
     """
+
     BASE_URL = ConstansLibrary.GITHUB_API_URL
     ACCEPT_HEADER = ConstansLibrary.GITHUB_ACCEPT_HEADER
-    API_VERSION_HEADER = ConstansLibrary.GITHUB_API_VERSION 
+    API_VERSION_HEADER = ConstansLibrary.GITHUB_API_VERSION
 
     def __init__(self, token: str):
         if not token:
             logger.error("GitHubClient initialized without a valid token.")
             raise GitHubAuthError("Missing GitHub access token.")
-        
+
         self.session: Session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {token}",
-            "Accept": self.ACCEPT_HEADER,
-            "X-GitHub-Api-Version": self.API_VERSION_HEADER 
-        })
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {token}",
+                "Accept": self.ACCEPT_HEADER,
+                "X-GitHub-Api-Version": self.API_VERSION_HEADER,
+            }
+        )
         logger.debug("GitHubClient initialized successfully.")
 
     def ping(self) -> bool:
@@ -36,14 +41,14 @@ class GitHubClient:
         logger.debug("Pinging GitHub API (/user) to validate token...")
         try:
             res: Response = self.session.get(f"{self.BASE_URL}/user", timeout=10)
-            
+
             if res.status_code == 200:
                 logger.info("GitHub API ping successful.")
                 return True
-            
+
             logger.warning(f"GitHub ping failed with status code: {res.status_code}")
             return False
-            
+
         except requests.exceptions.Timeout:
             logger.error("GitHub ping timed out.")
             return False
@@ -54,7 +59,7 @@ class GitHubClient:
     def get_file(self, repo: str, path: str, branch: str = "main") -> str:
         """
         Retrieve and decode a file's content from a GitHub repository.
-        
+
         :param repo: Repository name (e.g., 'BrewDat/brewdat-maz-repo').
         :param path: Path to the file within the repo.
         :param branch: Branch or ref to pull from (defaults to 'main').
@@ -68,16 +73,20 @@ class GitHubClient:
 
             # Handle auth errors
             if res.status_code in [401, 403]:
-                logger.error(f"GitHub auth error ({res.status_code}). Token may be invalid, expired, or lack permissions for {repo}.")
-                raise GitHubAuthError(f"Invalid/expired token or insufficient permissions for {repo}.")
-            
+                logger.error(
+                    f"GitHub auth error ({res.status_code}). Token may be invalid, expired, or lack permissions for {repo}."
+                )
+                raise GitHubAuthError(
+                    f"Invalid/expired token or insufficient permissions for {repo}."
+                )
+
             # Handle file not found
             if res.status_code == 404:
-                 logger.error(f"File not found (404) at {url}")
-                 raise GitHubRequestError(f"File not found: {path} in {repo}@{branch}")
-            
+                logger.error(f"File not found (404) at {url}")
+                raise GitHubRequestError(f"File not found: {path} in {repo}@{branch}")
+
             # Handle other HTTP errors
-            res.raise_for_status() 
+            res.raise_for_status()
 
             data = res.json()
             if isinstance(data, list) or "content" not in data:
@@ -87,7 +96,7 @@ class GitHubClient:
             # Decode Base64 content
             content_b64 = data["content"]
             decoded_content = base64.b64decode(content_b64).decode("utf-8")
-            
+
             logger.info(f"Successfully fetched and decoded file: {repo}/{path}")
             return decoded_content
 
@@ -100,7 +109,7 @@ class GitHubClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"GitHub get_file request failed: {e}")
             raise GitHubRequestError(f"Network error getting file: {e}")
-        
+
     def list_directory(self, repo: str, path: str, branch: str = "main") -> List[Dict]:
         """
         List files and directories in a specific path.
@@ -114,15 +123,15 @@ class GitHubClient:
 
             if res.status_code in [401, 403]:
                 raise GitHubAuthError(f"Permission denied for {repo}")
-            
+
             if res.status_code == 404:
                 logger.warning(f"Directory not found: {path}")
-                return [] 
+                return []
 
             res.raise_for_status()
-            
+
             data = res.json()
-            
+
             if not isinstance(data, list):
                 logger.warning(f"Path {path} is a file, not a directory.")
                 return []
@@ -131,8 +140,8 @@ class GitHubClient:
                 {
                     "name": item["name"],
                     "path": item["path"],
-                    "type": item["type"], 
-                    "download_url": item.get("download_url")
+                    "type": item["type"],
+                    "download_url": item.get("download_url"),
                 }
                 for item in data
             ]
