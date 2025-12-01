@@ -1,0 +1,96 @@
+🚀 Feature Request — Framework 3.0 Strategy + BaseExtractorStrategy
+💡 Description
+Implement the Framework 3.0 Strategy, a deterministic class for fetching and structuring raw artifacts from Platform 3.0.
+It will be used internally by the 3.0 ExtractorTool to retrieve ADF pipeline JSONs, Databricks notebooks, and linked services via the GitHubClient.
+
+In scope as well: define and ship the BaseExtractorStrategy interface to standardize all extractor strategies (3.0, COBOS, future variants).
+
+⚙️ Technical Proposal
+Files / Paths
+src/brewbridge/domain/extractor_strategies/base_strategy.py (new)
+src/brewbridge/domain/extractor_strategies/brewdat_3_0_strategy.py (new)
+1) BaseExtractorStrategy (contract)
+Path: domain/extractor_strategies/base_strategy.py
+Purpose: Provide a stable, testable interface for all extraction strategies.
+
+Interface (non-code specification)
+
+extract(pipeline_info: dict, credentials: dict) -> dict
+Orchestrates the full extraction flow and returns a normalized dict.
+
+validate_inputs(pipeline_info: dict, credentials: dict) -> None
+Raises InvalidInputError if required keys are missing.
+
+resolve_paths(pipeline_info: dict) -> dict
+Maps logical identifiers to repo paths (e.g., ADF JSON path, notebook path).
+
+fetch(resources: dict, credentials: dict) -> dict
+Uses clients (e.g., GitHubClient) to download raw files/blobs.
+
+normalize(raw: dict) -> dict
+Produces the canonical output:
+
+{
+  "adf_pipeline": {...},
+  "notebook_code": "def main(): ...",
+  "linked_services": {...}
+}
+Design Notes
+
+Deterministic (no LLM).
+Centralized error handling; raise only domain exceptions.
+Logging at each stage via infra/logger.py.
+2) Brewdat3Strategy (implementation)
+Path: domain/extractor_strategies/brewdat_3_0_strategy.py
+
+Responsibilities
+
+Use GitHubClient(credentials) to authenticate.
+resolve_paths: derive repo/file locations for ADF and notebooks based on pipeline_info.
+fetch: pull ADF pipeline JSON, notebook source(s), and optional linked services.
+normalize: return the canonical dict; include minimal metadata (e.g., commit SHA) if available.
+Retries (3) for transient failures via utils/retry_utils.py.
+Key Modules
+
+infra/github_client.py
+infra/logger.py
+utils/retry_utils.py
+domain/exceptions.py (ensure: ExtractionError, InvalidInputError, FileNotFoundError)
+Out of Scope
+
+Strategy selection (handled by the ToolNode).
+COBOS or other frameworks (separate issues).
+🔗 Integration Points
+Consumed by src/brewbridge/domain/tools/extractor/3.0/extractor_tool.py
+Export public symbols in domain/extractor_strategies/__init__.py
+✅ Acceptance Criteria
+
+BaseExtractorStrategy created with the five methods specified (docstrings + type hints).
+
+
+Brewdat3Strategy implements BaseExtractorStrategy and returns the canonical dict.
+
+
+Uses GitHubClient only (no raw HTTP).
+
+
+Retries on transient 5xx/network errors (3 attempts).
+
+
+Raises domain exceptions (InvalidInputError, FileNotFoundError, ExtractionError) with actionable messages.
+
+
+Structured logs at: start/end, path resolution, fetch, normalize, and on exceptions.
+
+
+Unit tests:
+
+happy path (mocked GitHubClient),
+missing inputs (expect InvalidInputError),
+not found (expect FileNotFoundError),
+transient failure then success (retry verified).
+
+Added exports in domain/extractor_strategies/__init__.py.
+
+
+Documented in Wiki → Extraction Strategies / Base + Framework 3.0 (purpose, inputs/outputs, example state update).

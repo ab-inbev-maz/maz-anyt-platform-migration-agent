@@ -20,6 +20,9 @@ class MigrationGraphState(BaseModel):
     normalized_schema_v4: Optional[Dict[str, Any]] = Field(default=None)
     current_pipeline_data: Optional[Dict[str, Any]] = Field(default=None)
     template_path: Optional[str] = Field(default=None)
+    
+    # Extraction artifacts (filled by Extractor Tools)
+    raw_artifacts_3_0: Optional[Dict[str, Any]] = Field(default=None)  # {"adf_json": "...", "notebook_code": "..."}
 
     @field_validator("environment_type")
     def validate_environment(cls, val):

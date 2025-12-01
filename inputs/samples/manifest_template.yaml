@@ -20,7 +20,7 @@
 pipelines_to_migrate:
   # Example 1: Bronze/Silver ingestion pipeline (Hopsflow)
   - name: test_ingestion_x
-    repo: BrewDat/example-source-repo
+    repo: BrewDat/brewdat-maz-maz-tech-sap-repo-adf
     path: pipelines/ingestion/pipeline1.json
     branch: main  # Optional, defaults to "main"
     environment_type: brz  # Optional: brz, slv, or gld
