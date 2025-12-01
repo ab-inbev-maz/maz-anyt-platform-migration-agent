@@ -14,13 +14,13 @@ class BrewBridgeError(Exception):
 # ============================================================
 # GitHub Client Exceptions
 # ============================================================
-class GitHubAuthError(Exception):
+class GitHubAuthError(BrewBridgeError):
     """Exception for 401/403 errors."""
 
     pass
 
 
-class GitHubRequestError(Exception):
+class GitHubRequestError(BrewBridgeError):
     """General exception for GitHub request failures."""
 
     pass
@@ -102,4 +102,24 @@ class AgentRoutingError(BrewBridgeError):
 class TemplateCreationError(BrewBridgeError):
     """Raised when the TemplateCreator fails to generate template files."""
 
+    pass
+
+# ============================================================
+# Extractor strategy exceptions
+# ============================================================
+
+
+class ExtractionError(BrewBridgeError):
+    """General error during the extraction process."""
+
+    pass
+
+class InvalidInputError(ExtractionError):
+    """Required input data is missing"""
+
+    pass
+
+class FileNotFoundError(ExtractionError):
+    """An expected file does not exist in the repository."""
+    
     pass
