@@ -8,9 +8,7 @@ pre-flight API connectivity checks using the domain-level
 
 from brewbridge.core.base_nodes import tool_node
 from brewbridge.core.state import MigrationGraphState
-from brewbridge.domain.extractor_strategies.read_manifest_and_check_api import (
-    ManifestPreflightService,
-)
+from brewbridge.domain.services.read_manifest_and_check_api import ManifestPreflightService
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.infrastructure.observability import track_node
 from brewbridge.utils.exceptions import ManifestNotFoundError, ManifestParseError

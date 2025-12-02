@@ -25,7 +25,9 @@ dotenv.load_dotenv()
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:8080"))
 
 
-# mlflow.langchain.autolog()
+mlflow.langchain.autolog()
+
+
 def main():
     logger = get_logger("brewbridge")
 
@@ -86,9 +88,8 @@ def main():
     final_state = runnable.invoke(initial_state)
     final_state_obj = MigrationGraphState(**final_state)
 
-    logger.info(f"Final state: {final_state_obj}")
+    logger.info("Final state: %s", final_state_obj)
 
 
 if __name__ == "__main__":
-    main()
     main()
