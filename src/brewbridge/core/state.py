@@ -11,10 +11,10 @@ class MigrationGraphState(BaseModel):
     credentials: Optional[Dict[str, str]] = Field(default=None)
     api_connectivity_ok: Optional[bool] = Field(default=None)
     pipelines_to_migrate: Optional[List[Dict[str, Any]]] = Field(default=None)
-    
+
     # Framework repositories (filled by Repo_Cloner_Tool)
     repos_cloned: Optional[List[str]] = Field(default=None)
-    
+
     # Existing fields
     environment_type: Optional[str] = Field(default=None)
     normalized_schema_v4: Optional[Dict[str, Any]] = Field(default=None)

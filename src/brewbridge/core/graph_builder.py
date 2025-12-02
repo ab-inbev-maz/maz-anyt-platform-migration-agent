@@ -1,7 +1,8 @@
 from langgraph.graph import END, START, StateGraph
 
 from brewbridge.core.state import MigrationGraphState
-from brewbridge.domain.tools.template_creator import template_creator_node
+from brewbridge.domain.tools.set_up import read_manifest_and_check_api
+from brewbridge.domain.tools.template_creator import template_creator
 from brewbridge.infrastructure.logger import get_logger
 
 
@@ -13,10 +14,13 @@ class MigrationGraphBuilder:
         self.start_node = None
 
     def build(self):
-        self.nodes["template_creator"] = template_creator_node
-        self.start_node = "template_creator"
+        self.nodes["read_manifest_and_check_api"] = read_manifest_and_check_api
+        self.nodes["template_creator"] = template_creator
+
+        self.start_node = "read_manifest_and_check_api"
         self.edges = {
-            START: "template_creator",
+            START: "read_manifest_and_check_api",
+            "read_manifest_and_check_api": "template_creator",
             "template_creator": END,
         }
         return self

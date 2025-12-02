@@ -4,7 +4,9 @@ import os
 
 from brewbridge.core.base_nodes import tool_node
 from brewbridge.core.state import MigrationGraphState
-from brewbridge.domain.tools.engineeringstore_input_builder import build_engineeringstore_inputs
+from brewbridge.domain.extractor_strategies.engineeringstore_input_builder import (
+    build_engineeringstore_inputs,
+)
 from brewbridge.infrastructure.engineeringstore_cli import (
     EngineeringStoreCLI,
     EngineeringStoreCommand,
@@ -18,7 +20,7 @@ logger = get_logger(__name__)
 
 @track_node("tool")
 @tool_node
-def template_creator_node(state: MigrationGraphState) -> MigrationGraphState:
+def template_creator(state: MigrationGraphState) -> MigrationGraphState:
     try:
         env = state.environment_type
         schema = state.normalized_schema_v4
