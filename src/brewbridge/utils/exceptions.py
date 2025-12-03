@@ -126,3 +126,38 @@ class ManifestParseError(BrewBridgeError):
     """Raised when the manifest.yaml file cannot be parsed or validated."""
 
     pass
+
+
+# ============================================================
+# Databricks Exceptions
+# ============================================================
+
+
+class DatabricksClientError(Exception):
+    pass
+
+
+class DatabricksConfigError(DatabricksClientError):
+    pass
+
+
+class DatabricksAuthError(DatabricksClientError):
+    pass
+
+
+class DatabricksExecutionError(DatabricksClientError):
+    pass
+
+
+class DatabricksTimeoutError(DatabricksClientError):
+    pass
+
+
+class DatabricksTableNotFoundError(DatabricksClientError):
+    pass
+
+
+class DatabricksWarehouseNotRunningError(DatabricksClientError):
+    """SQL Warehouse is stopped, starting, or not ready."""
+
+    pass

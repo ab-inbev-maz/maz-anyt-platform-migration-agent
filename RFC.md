@@ -86,7 +86,7 @@ flowchart TB
             STR3["Framework3Strategy<br/>(fetch ADF + Notebook via GitHubClient)"]:::tool
             STRC["COBOSStrategy<br/>(fetch SQL + JSON via GitHubClient)"]:::tool
         end
-
+        TIN["3.1. Template info normalizer"]:::tool
         %% --- NEW Step 4: Translators Phase (replaces Schema_Normalizer) ---
         %% Router remains, but step 4 conceptually are the translators it fans out to
         TMP["4. Template_Creator<br/>(ToolNode)<br/>Generates template files via engineeringstore"]:::tool
@@ -130,7 +130,7 @@ flowchart TB
         ZR["14B. END - Rejected by Human"]:::flow
 
         %% --- Connections ---
-        A --> B --> C --> ExtractorTool --> TMP --> RT
+        A --> B --> C --> ExtractorTool -->TIN --> TMP  --> RT
 
         %% Router fan-out to Translators (Step 4)
         RT --> ACL

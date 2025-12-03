@@ -52,6 +52,10 @@ def read_manifest_and_check_api(
     adf_env_present = all(
         credentials.get(key) for key in ["ADF_TENANT_ID", "ADF_CLIENT_ID", "ADF_CLIENT_SECRET"]
     )
+    databricks_env_present = all(
+        credentials.get(key)
+        for key in ["DATABRICKS_HOST", "DATABRICKS_TOKEN", "DATABRICKS_WAREHOUSE_ID"]
+    )
     llm_env_present = bool(
         (credentials.get("ASIMOV_URL") and credentials.get("ASIMOV_PRODUCT_TOKEN"))
         or credentials.get("OPENAI_API_KEY")
@@ -79,6 +83,12 @@ def read_manifest_and_check_api(
         logger.info("Skipping Azure Data Factory connectivity check; no ADF env vars provided.")
         adf_ok = True
 
+    if databricks_env_present:
+        databricks_ok = service.ping_databricks(credentials)
+    else:
+        logger.info("Skipping Databricks connectivity check; no Databricks env vars provided.")
+        databricks_ok = True
+
     if llm_env_present:
         llm_ok = service.ping_llm_apis(credentials)
     else:
@@ -86,11 +96,12 @@ def read_manifest_and_check_api(
         llm_ok = True
 
     # api_connectivity_ok is True only if all required APIs are accessible.
-    # GitHub is required, ADF and LLM are optional but should be checked
-    # if credentials exist.
+    # GitHub is required; ADF, Databricks and LLM are optional but should
+    # be checked if credentials exist.
     api_connectivity_ok = (
         github_ok
         and (adf_ok or "ADF_TENANT_ID" not in credentials)
+        and (databricks_ok or not databricks_env_present)
         and (llm_ok or not any(key in credentials for key in ["ASIMOV_URL", "OPENAI_API_KEY"]))
     )
 

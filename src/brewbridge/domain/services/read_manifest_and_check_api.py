@@ -3,7 +3,7 @@ Read_Manifest_and_Check_API pre-flight helpers.
 
 Domain-level service to:
 - collect and merge credentials,
-- ping GitHub, ADF and LLM APIs.
+- ping GitHub, ADF, Databricks and LLM APIs.
 
 The LangGraph ToolNode wrapper lives in
 `domain.tools.set_up.py`.
@@ -16,6 +16,7 @@ from typing import Dict, Optional
 from langchain_openai import ChatOpenAI
 
 from brewbridge.infrastructure.datafactory_client import ADFClient
+from brewbridge.infrastructure.databricks_client import DatabricksClient
 from brewbridge.infrastructure.github_client import GitHubClient
 from brewbridge.infrastructure.logger import get_logger
 
@@ -90,6 +91,14 @@ class ManifestPreflightService:
         if openai_key := os.getenv("OPENAI_API_KEY"):
             creds["OPENAI_API_KEY"] = openai_key
 
+        # Databricks credentials
+        if databricks_host := os.getenv("DATABRICKS_HOST"):
+            creds["DATABRICKS_HOST"] = databricks_host
+        if databricks_token := os.getenv("DATABRICKS_TOKEN"):
+            creds["DATABRICKS_TOKEN"] = databricks_token
+        if databricks_wh := os.getenv("DATABRICKS_WAREHOUSE_ID"):
+            creds["DATABRICKS_WAREHOUSE_ID"] = databricks_wh
+
         return creds
 
     def ping_github(self, credentials: Dict[str, str]) -> bool:
@@ -163,6 +172,43 @@ class ManifestPreflightService:
                 time.sleep(1)  # Wait 1 second before retry
 
         self._logger.error("Azure Data Factory ping failed after all retries.")
+        return False
+
+    def ping_databricks(self, credentials: Dict[str, str]) -> bool:
+        """
+        Ping Databricks SQL Warehouse to verify connectivity.
+
+        Retries up to 3 times on failure.
+        """
+        has_required = all(
+            credentials.get(key)
+            for key in ["DATABRICKS_HOST", "DATABRICKS_TOKEN", "DATABRICKS_WAREHOUSE_ID"]
+        )
+        if not has_required:
+            self._logger.warning(
+                "Databricks credentials incomplete. Skipping Databricks ping.",
+            )
+            return False
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                client = DatabricksClient()
+                if client.ping():
+                    self._logger.info("Databricks ping successful.")
+                    return True
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self._logger.warning(
+                    "Databricks ping attempt %s/%s failed: %s",
+                    attempt + 1,
+                    max_retries,
+                    exc,
+                )
+
+            if attempt < max_retries - 1:
+                time.sleep(1)
+
+        self._logger.error("Databricks ping failed after all retries.")
         return False
 
     def ping_llm_apis(self, credentials: Dict[str, str]) -> bool:
