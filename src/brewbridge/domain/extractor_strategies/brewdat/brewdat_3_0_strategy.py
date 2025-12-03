@@ -3,7 +3,7 @@ import os
 import sys
 from dotenv import load_dotenv
 from typing import Any, Dict, List
-from brewbridge.domain.extractor_strategies.brewdat.base_strategy import BaseExtractorStrategy
+from brewbridge.domain.extractor_strategies.base_strategy import BaseExtractorStrategy
 from brewbridge.domain.extractor_strategies.brewdat.structures import MigrationItem
 from brewbridge.infrastructure import GitHubClient
 from brewbridge.utils.exceptions import InvalidInputError, ExtractionError
@@ -69,7 +69,6 @@ class Brewdat3Strategy(BaseExtractorStrategy):
             logger.warning(f"No se pudo extraer el pipelineReference del trigger: {e}")
 
         # C. Global Parameters 
-        # Como el nombre del archivo puede variar entonces leo el archivo dentro de factory/ 
         artifacts["global_parameters"] = self._fetch_global_parameters(repo_adf)
 
         # || Parsing & Objetos (Estructuración) 
@@ -81,7 +80,7 @@ class Brewdat3Strategy(BaseExtractorStrategy):
         logger.info(f" Identificadas {len(migration_items)} tablas para migrar.")
 
         # || Código (Notebooks Deduplicados) 
-        logger.info("--- Fase 3: Descarga de Código (Notebooks) ---")
+        logger.info("Fase 3: Descarga de Código (Notebooks)")
         unique_scripts = set()
         
         for item in migration_items:
@@ -111,36 +110,31 @@ class Brewdat3Strategy(BaseExtractorStrategy):
                     yaml_content = self.client.get_file(self.GOVERNANCE_REPO, gov_path)
                     artifacts["quality_rules"][item.table_name] = yaml_content
                     
-                    # Actualizamos el item en la lista de artefactos con la ruta encontrada
-                    # (Esto es un poco hacky porque ya hicimos el dump, pero útil para referencia)
                     for dict_item in artifacts["items"]:
                         if dict_item["table_name"] == item.table_name:
                             dict_item["governance_path"] = gov_path
 
                 except Exception as e:
-                    # Governance es opcional muchas veces, warn en lugar de error
                     logger.warning(f"⚠️ No hay reglas DQ para {item.table_name} o ruta inválida.")
 
         return artifacts
 
     def normalize_output(self, raw_artifacts: Dict[str, Any]) -> Dict[str, Any]:
-        """Pasa los artefactos directamente al campo raw_artifacts del State."""
+        """Pass the artifacts directly to the State's raw_artifacts field."""
         return {
             "raw_artifacts": raw_artifacts
         }
 
-    # Helpers para contruir la logica 
-
+    # Helpers 
     def _fetch_global_parameters(self, repo: str) -> Dict:
         """Search and download the factory file inside 'factory/' folder."""
         try:
             files = self.client.list_directory(repo, "factory")
             for f in files:
-                if f["name"].endswith(".json") and "sap-adf" in f["name"]: # -> Filtro de seguridad
+                if f["name"].endswith(".json") and "sap-adf" in f["name"]: 
                     content = self.client.get_file(repo, f["path"])
                     return json.loads(content)
             
-            # Fallback: intentar un nombre estándar o el primer json
             logger.warning("No se encontró archivo factory específico, buscando cualquier JSON en factory/")
             for f in files:
                 if f["name"].endswith(".json"):
@@ -162,10 +156,9 @@ class Brewdat3Strategy(BaseExtractorStrategy):
                 brz = entry.get("load_to_bronze")
                 slv = entry.get("load_to_silver")
                 
-                # Definir nombre de tabla (Prioridad Silver > Bronze)
                 t_name = slv.get("target_table") if slv else (brz.get("target_table") if brz else "unknown")
                 
-                # Calcular rutas de notebooks (Limpieza para asegurar formato correcto)
+                # Calcular rutas de notebooks 
                 nb_brz = self._clean_adb_path(brz.get("adb_notebook_path")) if brz else None
                 nb_slv = self._clean_adb_path(slv.get("adb_notebook_path")) if slv else None
                 
@@ -185,11 +178,11 @@ class Brewdat3Strategy(BaseExtractorStrategy):
         return parsed
 
     def _clean_adb_path(self, raw_path: str) -> str:
-        """Limpia //repo/path -> path.py"""
+        """clean //repo/path -> path.py"""
         if not raw_path: return None
         path = raw_path
         if raw_path.startswith("//"):
-            parts = raw_path.split("/", 3) # ['', '', 'repo', 'resto']
+            parts = raw_path.split("/", 3) 
             if len(parts) > 3:
                 path = parts[3]
         if not path.endswith(".py"):
@@ -198,30 +191,28 @@ class Brewdat3Strategy(BaseExtractorStrategy):
 
     def _extract_params_values(self, global_json: Dict) -> Dict[str, str]:
         """
-        Aplana los parámetros globales para facilitar su uso.
-        Toma los valores de 'prod' por defecto o del nivel raíz.
+        Flattens the global parameters for easier use.
+        Takes values from 'prod' by default or from the root level.
         """
-        # Simplificación: Extraemos un diccionario plano key:value
+
         values = {}
         try:
-            # 1. Variables directas (environment, subscription...)
             gp = global_json.get("properties", {}).get("globalParameters", {})
             for k, v in gp.items():
                 if "value" in v and isinstance(v["value"], str):
                     values[k] = v["value"]
             
-            # 2. default_parameters_per_environment (Preferimos PROD o el primero disponible)
             env_params = gp.get("default_parameters_per_environment", {}).get("value", {})
             target_env = env_params.get("prod") or env_params.get("dev") or {}
             
-            values.update(target_env) # Fusionamos
+            values.update(target_env) 
             
         except Exception:
-            pass # Si falla, devolvemos lo que tengamos
+            pass #En caso de error, devolvemos lo que pudimos extraer
         return values
 
     def _build_governance_path(self, item: MigrationItem, global_params: Dict) -> str:
-        """Construye la ruta compleja del YAML de calidad."""
+        """Builds the complex path for the quality YAML."""
         # src/{zone}/{zone}/{domain}/{system}/dq_definitions/{country}/{db}/{table}.yaml
         
         # Datos desde Silver Config -> Trigger
@@ -232,7 +223,7 @@ class Brewdat3Strategy(BaseExtractorStrategy):
         table = item.table_name
         
         # Datos desde Global Params
-        zone = global_params.get("project_zone", "maz") # Default 'maz' si falla
+        zone = global_params.get("project_zone", "maz")
         domain = global_params.get("project_business_domain", "tech")
         
         return f"src/{zone}/{zone}/{domain}/{system}/dq_definitions/{country}/{db}/{table}.yaml"

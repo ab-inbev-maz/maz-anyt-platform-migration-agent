@@ -15,6 +15,12 @@ class MigrationGraphState(BaseModel):
     # Framework repositories (filled by Repo_Cloner_Tool)
     repos_cloned: Optional[List[str]] = Field(default=None)
 
+    # Filled by ExtractorTool (Output de la Estrategia 3.0)
+    raw_artifacts: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Contains the complete extraction structure: Triggers, Pipelines, Global Params, Code and Rules."
+    )
+
     # Existing fields
     environment_type: Optional[str] = Field(default=None)
     normalized_schema_v4: Optional[Dict[str, Any]] = Field(default=None)
