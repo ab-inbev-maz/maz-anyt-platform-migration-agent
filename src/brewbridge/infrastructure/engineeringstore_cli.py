@@ -44,10 +44,10 @@ class EngineeringStoreCLI:
         table_type = table_type.lower()
 
         if table_type == "gold":
-            return os.path.join("cache", "brewtiful", "brewtiful")
+            return os.path.join("cache", "brewtiful")
 
         if table_type in ("brz", "slv"):
-            return os.path.join("cache", "hopsflow", "brewdat-pltfrm-ghq-tech-hopsflow")
+            return os.path.join("cache", "brewdat-pltfrm-ghq-tech-hopsflow")
 
         raise ValueError(f"Invalid table_type '{table_type}'. Expected 'gold', 'brz', or 'slv'.")
 

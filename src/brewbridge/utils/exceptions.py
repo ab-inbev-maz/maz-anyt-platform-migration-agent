@@ -26,6 +26,12 @@ class GitHubRequestError(BrewBridgeError):
     pass
 
 
+class RepositoryCloneError(BrewBridgeError):
+    """Raised when a repository fails to clone or update."""
+
+    pass
+
+
 # ============================================================
 # EngineeringStore CLI Exceptions
 # ============================================================
@@ -104,22 +110,54 @@ class TemplateCreationError(BrewBridgeError):
 
     pass
 
+
 # ============================================================
-# Extractor strategy exceptions
+# Manifest Exceptions
 # ============================================================
 
 
-class ExtractionError(BrewBridgeError):
-    """General error during the extraction process."""
+class ManifestNotFoundError(BrewBridgeError):
+    """Raised when the manifest.yaml file is not found at the specified path."""
 
     pass
 
-class InvalidInputError(ExtractionError):
-    """Required input data is missing"""
+
+class ManifestParseError(BrewBridgeError):
+    """Raised when the manifest.yaml file cannot be parsed or validated."""
 
     pass
 
-class FileNotFoundError(ExtractionError):
-    """An expected file does not exist in the repository."""
-    
+
+# ============================================================
+# Databricks Exceptions
+# ============================================================
+
+
+class DatabricksClientError(Exception):
+    pass
+
+
+class DatabricksConfigError(DatabricksClientError):
+    pass
+
+
+class DatabricksAuthError(DatabricksClientError):
+    pass
+
+
+class DatabricksExecutionError(DatabricksClientError):
+    pass
+
+
+class DatabricksTimeoutError(DatabricksClientError):
+    pass
+
+
+class DatabricksTableNotFoundError(DatabricksClientError):
+    pass
+
+
+class DatabricksWarehouseNotRunningError(DatabricksClientError):
+    """SQL Warehouse is stopped, starting, or not ready."""
+
     pass

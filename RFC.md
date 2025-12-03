@@ -86,51 +86,53 @@ flowchart TB
             STR3["Framework3Strategy<br/>(fetch ADF + Notebook via GitHubClient)"]:::tool
             STRC["COBOSStrategy<br/>(fetch SQL + JSON via GitHubClient)"]:::tool
         end
+        TIN["3.1. Template info normalizer"]:::tool
+        %% --- NEW Step 4: Translators Phase (replaces Schema_Normalizer) ---
+        %% Router remains, but step 4 conceptually are the translators it fans out to
+        TMP["4. Template_Creator<br/>(ToolNode)<br/>Generates template files via engineeringstore"]:::tool
 
-        %% --- 3. Schema Generation ---
-        SN["4. Schema_Normalizer<br/>(AgentNode)<br/>Creates normalized_schema_v4"]:::agent
+        RT["5. Router_Tool<br/>(ToolNode)<br/>Resolves translator list"]:::tool
 
-        %% --- NEW Step 5: Template Creator ---
-        TMP["5. Template_Creator<br/>(ToolNode)<br/>Generates template files via engineeringstore"]:::tool
+        %% --- 4. Translators (now Step 4) ---
+        subgraph TranslatorsPhase["6. Translators (Agent/Tool Nodes)"]
+        direction TB
+            ACL["ACL_Translator"]:::agent
+            META["Meta_Translator"]:::agent
+            QUAL["Quality_Translator"]:::agent
+            SYNC["Sync_Translator"]:::agent
+            OBS["Observability_Translator"]:::agent
 
-        %% --- 4. Translator Router ---
-        RT["6. Router_Tool<br/>(ToolNode)<br/>Resolves translator list"]:::tool
+            %% Hopsflow-specific
+            PIPE["PipelineTranslator<br/>(Hopsflow)"]:::agent
+            TRNS["TransformationsTranslator<br/>(Hopsflow)"]:::agent
 
-        %% --- 5. Translators (Parallel Fan-Out) ---
-        %% Shared translators
-        ACL["7. ACLTranslator"]:::agent
-        META["8. MetadataTranslator"]:::agent
-        QUAL["9. QualityTranslator"]:::agent
-        SYNC["10. SyncTranslator"]:::agent
-        OBS["11. ObservabilityTranslator"]:::agent
+            %% Brewtiful-specific
+            NB["NotebookTranslator<br/>(Brewtiful)"]:::agent
+            RF["RuffFormatter<br/>(ToolNode)"]:::tool
+        end
 
-        %% Hopsflow-specific
-        PIPE["12. PipelineTranslator<br/>(Hopsflow)"]:::agent
-        TRNS["13. TransformationsTranslator<br/>(Hopsflow)"]:::agent
+        %% --- NEW Step 6: Parser Tool (replaces translators → validator direct wiring) ---
+        PARSER["6.1. Parser_Tool<br/>(ToolNode)<br/>Aggregates translator outputs → validation-ready artifacts"]:::tool
 
-        %% Brewtiful-specific
-        NB["14. NotebookTranslator<br/>(Brewtiful)"]:::agent
-        RF["15. RuffFormatter<br/>(ToolNode)"]:::tool
-
-        %% --- 6. Validation Loop ---
-        VAL["16. Validator_Tool"]:::tool
-        CKV{"17. Check Validation"}:::tool
-        COR["18. CorrectorAgent<br/>(AgentNode)"]:::agent
+        %% --- 6. Validation Loop (now fed by Parser_Tool) ---
+        VAL["7. Validator_Tool"]:::tool
+        CKV{"8. Check Validation"}:::tool
+        COR["9. CorrectorAgent<br/>(AgentNode)"]:::agent
 
         %% --- 7. Human Validation ---
-        HITL["19. Human_Approval_Node<br/>(HumanNode)"]:::human
-        CH{"20. Check Human Decision"}:::human
+        HITL["10. Human_Approval_Node<br/>(HumanNode)"]:::human
+        CH{"11. Check Human Decision"}:::human
 
         %% --- 8. Reporting + Generation ---
-        REP["21. ReporterLogger<br/>(AgentNode)"]:::agent
-        GEN["22. Generator Tool"]:::tool
-        Z["23. END - Package Ready"]:::flow
-        ZR["23B. END - Rejected by Human"]:::flow
+        REP["12. ReporterLogger<br/>(AgentNode)"]:::agent
+        GEN["13. Generator Tool"]:::tool
+        Z["14. END - Package Ready"]:::flow
+        ZR["14B. END - Rejected by Human"]:::flow
 
         %% --- Connections ---
-        A --> B --> C --> ExtractorTool --> SN --> TMP --> RT
+        A --> B --> C --> ExtractorTool -->TIN --> TMP  --> RT
 
-        %% Router fan-out
+        %% Router fan-out to Translators (Step 4)
         RT --> ACL
         RT --> META
         RT --> QUAL
@@ -144,16 +146,18 @@ flowchart TB
         %% Brewtiful branch
         RT -- gld --> NB --> RF
 
-        %% Fan-in to validator
-        ACL --> VAL
-        META --> VAL
-        QUAL --> VAL
-        SYNC --> VAL
-        OBS --> VAL
-        PIPE --> VAL
-        TRNS --> VAL
-        RF --> VAL
+        %% Translators fan-in to Parser_Tool (NEW Step 6)
+        ACL --> PARSER
+        META --> PARSER
+        QUAL --> PARSER
+        SYNC --> PARSER
+        OBS --> PARSER
+        PIPE --> PARSER
+        TRNS --> PARSER
+        RF --> PARSER
 
+        %% Parser_Tool → Validator
+        PARSER --> VAL
         VAL --> CKV
         CKV -- FAIL --> COR --> VAL
         CKV -- PASS --> HITL --> CH
@@ -167,7 +171,6 @@ flowchart TB
     classDef agent fill:#9fd5ff,stroke:#004d80,stroke-width:1px,color:#000;
     classDef human fill:#c8f7c5,stroke:#2b8000,stroke-width:1px,color:#000;
     classDef flow fill:#e0e0e0,stroke:#888,stroke-width:1px,color:#000;
-
 ```
 
 ### Paso 1: Read_Manifest_and_Check_API
