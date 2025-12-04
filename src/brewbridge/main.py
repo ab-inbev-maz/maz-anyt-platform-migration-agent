@@ -1,9 +1,5 @@
-import argparse
-
 # Import read_manifest_and_check_api tool
-import importlib.util
 import os
-import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -16,7 +12,6 @@ from brewbridge.core.graph_builder import MigrationGraphBuilder
 from brewbridge.core.state import MigrationGraphState
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.infrastructure.observability import end_pipeline_run, start_pipeline_run
-from brewbridge.utils.exceptions import ManifestNotFoundError, ManifestParseError
 from brewbridge.utils.manifest_yaml_utils import load_manifest
 
 dotenv.load_dotenv()
