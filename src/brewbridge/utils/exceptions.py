@@ -14,13 +14,13 @@ class BrewBridgeError(Exception):
 # ============================================================
 # GitHub Client Exceptions
 # ============================================================
-class GitHubAuthError(Exception):
+class GitHubAuthError(BrewBridgeError):
     """Exception for 401/403 errors."""
 
     pass
 
 
-class GitHubRequestError(Exception):
+class GitHubRequestError(BrewBridgeError):
     """General exception for GitHub request failures."""
 
     pass

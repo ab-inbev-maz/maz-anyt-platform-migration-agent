@@ -78,18 +78,36 @@ def main():
     builder = MigrationGraphBuilder(logger=logger).build()
     runnable = builder.compile()
 
-    png_bytes = runnable.get_graph().draw_mermaid_png(
-        draw_method=MermaidDrawMethod.API, output_file_path="migration_flow.png"
-    )
+    try:
+        png_bytes = runnable.get_graph().draw_mermaid_png(
+            draw_method=MermaidDrawMethod.API, output_file_path="migration_flow.png"
+        )
+        # img = Image.open(BytesIO(png_bytes))
+        # img.show() 
+    except Exception as e:
+        logger.warning(f"No se pudo generar la imagen del grafo: {e}")
+    
+    start_pipeline_run(initial_state)
+    logger.info("🎥 Observabilidad iniciada (MLflow run created)")
 
-    img = Image.open(BytesIO(png_bytes))
-    img.show()
+    try:
+        logger.info("🚀 Iniciando ejecución del grafo...")
+        
+        final_state = runnable.invoke(initial_state)
 
-    final_state = runnable.invoke(initial_state)
-    final_state_obj = MigrationGraphState(**final_state)
+        final_state_obj = MigrationGraphState(**final_state)
+        logger.info("✅ Grafo finalizado exitosamente.")
+        logger.debug(f"Estado Final: {final_state_obj}")
 
-    logger.info("Final state: %s", final_state_obj)
+        end_pipeline_run(status="success")
+        logger.info("🎥 Observabilidad finalizada (Status: Success)")
 
+    except Exception as e:
+        logger.error(f"💥 Error crítico durante la ejecución del grafo: {e}")
+        
+        end_pipeline_run(status="failed")
+        raise e  
 
 if __name__ == "__main__":
     main()
+    
