@@ -101,6 +101,23 @@ class AgentRoutingError(BrewBridgeError):
 
 
 # ============================================================
+# Extraction Exceptions
+# ============================================================
+
+
+class ExtractionError(BrewBridgeError):
+    """Raised when an extraction strategy fails or encounters invalid state."""
+
+    pass
+
+
+class InvalidInputError(BrewBridgeError):
+    """Raised when required inputs for a tool/strategy are missing or malformed."""
+
+    pass
+
+
+# ============================================================
 # Templates Creation Exceptions
 # ============================================================
 

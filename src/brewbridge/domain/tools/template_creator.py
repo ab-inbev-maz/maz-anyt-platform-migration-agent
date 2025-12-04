@@ -24,7 +24,7 @@ def template_creator(state: MigrationGraphState) -> MigrationGraphState:
     try:
         env = state.environment_type
         schema = state.normalized_schema_v4
-        metadata = state.current_pipeline_data
+        metadata = state.pipeline_info
 
         if env not in {"gld", "brz", "slv"}:
             raise TemplateCreationError(f"Invalid environment_type: {env}")

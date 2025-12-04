@@ -5,6 +5,7 @@ from brewbridge.utils.exceptions import ExtractionError
 
 logger = get_logger(__name__)
 
+
 class BaseExtractorStrategy(ABC):
     """
     Abstract base class that defines the contract for all extraction strategies.
@@ -22,13 +23,13 @@ class BaseExtractorStrategy(ABC):
         try:
             # Validación de entradas
             self.validate_inputs(pipeline_info)
-            
+
             # Extracción física (Fetch)
             raw_artifacts = self.fetch_artifacts(pipeline_info)
-            
+
             # Normalización de salida
             normalized_data = self.normalize_output(raw_artifacts)
-            
+
             logger.info(f"✅ [{strategy_name}] Extraction completed successfully.")
             return normalized_data
 

@@ -14,11 +14,10 @@ from PIL import Image
 
 from brewbridge.core.graph_builder import MigrationGraphBuilder
 from brewbridge.core.state import MigrationGraphState
-from brewbridge.infrastructure.github_client import GitHubClient
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.infrastructure.observability import end_pipeline_run, start_pipeline_run
 from brewbridge.utils.exceptions import ManifestNotFoundError, ManifestParseError
-from brewbridge.utils.yaml_utils import load_manifest
+from brewbridge.utils.manifest_yaml_utils import load_manifest
 
 dotenv.load_dotenv()
 
@@ -30,33 +29,33 @@ mlflow.langchain.autolog()
 
 def main():
     logger = get_logger("brewbridge")
-
-    initial_state = {
-        "manifest_path": str(
-            Path(__file__).parent.parent.parent / "inputs" / "samples" / "manifest_template.yaml"
-        ),
-        "environment_type": "brz",
-        "normalized_schema_v4": {
-            "zone": "maz",
-            "landing_zone": "maz",
-            "domain": "logistics",
-            "pipeline": "test_ingestion_x",
-            "schedule": "* * 2 * *",
-            "table_name": "raw_logistics_orders",
-            "owner": "platform",
-            "connector": "blob",
-            "source_system": "sap-test",
-            "source_entity": "sap-test",
-            "target_entity": "sap-test",
-            "connection_id": "sap-test-secret",
-            "transformations": "",
-            "acl": "yn",
-        },
-        "current_pipeline_data": {"pipeline_name": "test_ingestion_x"},
-    }
+    manifest_path = Path(__file__).parent.parent.parent / "inputs" / "samples" / "manifest.yaml"
+    state = load_manifest(str(manifest_path))
+    state["manifest_path"] = str(manifest_path)
+    state.update(
+        {
+            "environment_type": "brz",
+            "normalized_schema_v4": {
+                "zone": "maz",
+                "landing_zone": "maz",
+                "domain": "logistics",
+                "pipeline": "test_ingestion_x",
+                "schedule": "* * 2 * *",
+                "table_name": "raw_logistics_orders",
+                "owner": "platform",
+                "connector": "blob",
+                "source_system": "sap-test",
+                "source_entity": "sap-test",
+                "target_entity": "sap-test",
+                "connection_id": "sap-test-secret",
+                "transformations": "",
+                "acl": "yn",
+            },
+        }
+    )
 
     # Alternative initial state for gold environment (commented out, preserved for reference)
-    # initial_state = {
+    # state = {
     #     "environment_type": "gld",
     #     "normalized_schema_v4": {
     #         "zone": "maz",
@@ -71,7 +70,7 @@ def main():
     #         "acl": "y",
     #         "trigger": "n"
     #     },
-    #     "current_pipeline_data": {"pipeline_name": "test_pipeline_x"},
+    #     "pipeline_info": {"pipeline_name": "test_pipeline_x"},
     # }
 
     # Build migration graph
@@ -82,18 +81,18 @@ def main():
         png_bytes = runnable.get_graph().draw_mermaid_png(
             draw_method=MermaidDrawMethod.API, output_file_path="migration_flow.png"
         )
-        # img = Image.open(BytesIO(png_bytes))
-        # img.show() 
+        img = Image.open(BytesIO(png_bytes))
+        img.show()
     except Exception as e:
         logger.warning(f"No se pudo generar la imagen del grafo: {e}")
-    
-    start_pipeline_run(initial_state)
+
+    start_pipeline_run(state)
     logger.info("🎥 Observabilidad iniciada (MLflow run created)")
 
     try:
         logger.info("🚀 Iniciando ejecución del grafo...")
-        
-        final_state = runnable.invoke(initial_state)
+
+        final_state = runnable.invoke(state)
 
         final_state_obj = MigrationGraphState(**final_state)
         logger.info("✅ Grafo finalizado exitosamente.")
@@ -104,10 +103,10 @@ def main():
 
     except Exception as e:
         logger.error(f"💥 Error crítico durante la ejecución del grafo: {e}")
-        
+
         end_pipeline_run(status="failed")
-        raise e  
+        raise e
+
 
 if __name__ == "__main__":
     main()
-    

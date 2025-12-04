@@ -221,7 +221,7 @@ class TestLogStateSnapshot:
         # Arrange
         state = {
             "environment_type": "brz",
-            "current_pipeline_data": {"pipeline_name": "test_pipeline"},
+            "pipeline_info": {"pipeline_name": "test_pipeline"},
             "normalized_schema_v4": {"tables": ["table1", "table2"]},
             "pipeline_template": {"template": "content"},
             "irrelevant_key": "should not be logged",
@@ -238,7 +238,7 @@ class TestLogStateSnapshot:
 
         snapshot = json.loads(logged_json)
         assert "environment_type" in snapshot
-        assert "current_pipeline_data" in snapshot
+        assert "pipeline_info" in snapshot
         assert "normalized_schema_v4" in snapshot
         assert "pipeline_template" in snapshot
         assert "irrelevant_key" not in snapshot
@@ -293,7 +293,7 @@ class TestLogStateSnapshot:
         # Only keys from keys_of_interest that are in state should be present
         assert "environment_type" in snapshot
         assert "transform_template" in snapshot
-        assert "current_pipeline_data" not in snapshot  # Not in state
+        assert "pipeline_info" not in snapshot  # Not in state
         assert "normalized_schema_v4" not in snapshot  # Not in state
         assert "unrelated_key" not in snapshot  # Not in keys_of_interest
 
@@ -303,7 +303,7 @@ class TestLogStateSnapshot:
         # Arrange
         state = {
             "environment_type": "slv",
-            "current_pipeline_data": {"pipeline_name": "full_test"},
+            "pipeline_info": {"pipeline_name": "full_test"},
             "normalized_schema_v4": {"version": 4},
             "pipeline_template": {"type": "pipeline"},
             "transform_template": {"type": "transform"},
@@ -319,7 +319,7 @@ class TestLogStateSnapshot:
         snapshot = json.loads(logged_json)
         assert len(snapshot) == 6  # All keys_of_interest
         assert "environment_type" in snapshot
-        assert "current_pipeline_data" in snapshot
+        assert "pipeline_info" in snapshot
         assert "normalized_schema_v4" in snapshot
         assert "pipeline_template" in snapshot
         assert "transform_template" in snapshot
@@ -330,7 +330,7 @@ class TestLogStateSnapshot:
     def test_json_formatting(self, mock_mlflow: MagicMock) -> None:
         """Test that log_state_snapshot formats JSON with proper indentation."""
         # Arrange
-        state = {"environment_type": "brz", "current_pipeline_data": {"name": "test"}}
+        state = {"environment_type": "brz", "pipeline_info": {"name": "test"}}
 
         # Act
         log_state_snapshot(state)
@@ -350,7 +350,7 @@ class TestLogStateSnapshot:
         # Arrange
         state = {
             "environment_type": "gld",
-            "current_pipeline_data": {
+            "pipeline_info": {
                 "pipeline_name": "complex",
                 "config": {"nested": {"deeply": {"key": "value"}}},
                 "list": [1, 2, {"inner": "data"}],
@@ -363,5 +363,5 @@ class TestLogStateSnapshot:
         # Assert
         logged_json = mock_mlflow.log_text.call_args[0][0]
         snapshot = json.loads(logged_json)
-        assert snapshot["current_pipeline_data"]["config"]["nested"]["deeply"]["key"] == "value"
-        assert snapshot["current_pipeline_data"]["list"][2]["inner"] == "data"
+        assert snapshot["pipeline_info"]["config"]["nested"]["deeply"]["key"] == "value"
+        assert snapshot["pipeline_info"]["list"][2]["inner"] == "data"

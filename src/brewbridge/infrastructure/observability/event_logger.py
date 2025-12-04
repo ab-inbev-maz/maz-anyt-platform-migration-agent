@@ -90,7 +90,7 @@ def log_state_snapshot(state: Mapping[str, Any], label: str = "state_snapshot") 
     # Only keep a subset of keys that are useful for debugging at the node level.
     keys_of_interest = [
         "environment_type",
-        "current_pipeline_data",
+        "pipeline_info",
         "normalized_schema_v4",
         "pipeline_template",
         "transform_template",

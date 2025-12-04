@@ -1,11 +1,23 @@
 """
 YAML utilities for parsing and validating manifest files.
+
+Expected manifest shape (YAML):
+
+pipeline_info:
+  repo_name: BrewDat/brewdat-maz-maz-tech-sap-repo-adf
+  trigger_name: tr_slv_maz_tech_metadata_sap_pr0_mx_d_0500
+access_groups:
+  - AADS_A_Brewdat-ghq-p-ghq-mark-mroi-rw
+source_platform: platform_3_0
+# Optional:
+# quality_repo: brewdat/quality_repo
 """
 
-import yaml
 from pathlib import Path
-from typing import Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Dict, List, Optional
+
+import yaml
+from pydantic import BaseModel, Field
 
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.utils.exceptions import ManifestNotFoundError, ManifestParseError
@@ -13,23 +25,18 @@ from brewbridge.utils.exceptions import ManifestNotFoundError, ManifestParseErro
 logger = get_logger(__name__)
 
 
+class PipelineInfo(BaseModel):
+    repo_name: str
+    trigger_name: str
+
+
 class ManifestModel(BaseModel):
     """Pydantic model for validating manifest.yaml structure."""
 
-    pipelines_to_migrate: list = Field(default_factory=list)
-    credentials: Dict[str, str] = Field(default_factory=dict)
-    region: str = Field(default=None)
-    environment: str = Field(default=None)
-    repo_name: str = Field(default=None)
-    target_repo_name: str = Field(default=None)
-
-    @field_validator("environment")
-    def validate_environment(cls, val):
-        if val is None:
-            return val
-        if val not in {"dev", "prod"}:
-            raise ValueError(f"Invalid environment '{val}'. Expected 'dev' or 'prod'.")
-        return val
+    pipeline_info: PipelineInfo
+    access_groups: List[str] = Field(default_factory=list)
+    source_platform: str = Field(default="platform_3_0")
+    quality_repo: Optional[str] = None
 
 
 def load_manifest(manifest_path: str) -> Dict[str, Any]:
@@ -54,7 +61,6 @@ def load_manifest(manifest_path: str) -> Dict[str, Any]:
         if content is None:
             raise ManifestParseError("Manifest file is empty or invalid")
 
-        # Validate structure using Pydantic
         manifest = ManifestModel(**content)
         logger.info(f"Successfully loaded and validated manifest: {manifest_path}")
         return manifest.model_dump()
