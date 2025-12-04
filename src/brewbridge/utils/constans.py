@@ -6,3 +6,6 @@ class ConstansLibrary:
     # Framework repository URLs (4.0 Platform)
     BREWTIFUL_REPO_URL = "https://github.com/BrewDat/brewtiful.git"
     HOPSFLOW_REPO_URL = "https://github.com/BrewDat/brewdat-pltfrm-ghq-tech-hopsflow.git"
+
+    # Base Repository for Platform 3.0 artifacts
+    GOVERNANCE_REPO = "BrewDat/brewdat-pltfrm-ghq-tech-datagovernance"

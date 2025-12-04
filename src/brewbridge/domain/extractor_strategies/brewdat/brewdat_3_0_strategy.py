@@ -8,6 +8,7 @@ from brewbridge.domain.extractor_strategies.brewdat.structures import MigrationI
 from brewbridge.infrastructure import GitHubClient
 from brewbridge.utils.exceptions import InvalidInputError, ExtractionError
 from brewbridge.infrastructure import get_logger
+from brewbridge.utils.constans import ConstansLibrary
 
 logger = get_logger(__name__)
 
@@ -25,7 +26,7 @@ class Brewdat3Strategy(BaseExtractorStrategy):
 
     load_dotenv()
 
-    GOVERNANCE_REPO = os.getenv("GOVERNANCE_REPO")
+    GOVERNANCE_REPO = ConstansLibrary.GOVERNANCE_REPO
 
     def __init__(self, github_client: GitHubClient):
         self.client = github_client
