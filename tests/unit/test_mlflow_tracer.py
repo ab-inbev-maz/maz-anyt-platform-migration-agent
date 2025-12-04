@@ -54,7 +54,7 @@ class TestExtractCommonTagsFromState:
         """Test that all tags are extracted when present in state."""
         state = {
             "environment_type": "brz",
-            "current_pipeline_data": {"pipeline_name": "my_pipeline"},
+            "pipeline_info": {"pipeline_name": "my_pipeline"},
         }
         tags = _extract_common_tags_from_state(state)
         assert tags == {
@@ -73,9 +73,9 @@ class TestExtractCommonTagsFromState:
             "framework": "unknown",
         }
 
-    def test_handles_none_current_pipeline_data(self) -> None:
-        """Test that None current_pipeline_data is handled gracefully."""
-        state = {"environment_type": "slv", "current_pipeline_data": None}
+    def test_handles_none_pipeline_info(self) -> None:
+        """Test that None pipeline_info is handled gracefully."""
+        state = {"environment_type": "slv", "pipeline_info": None}
         tags = _extract_common_tags_from_state(state)
         assert tags == {
             "pipeline": "unknown",
@@ -98,7 +98,7 @@ class TestStartPipelineRun:
 
         state = {
             "environment_type": "gld",
-            "current_pipeline_data": {"pipeline_name": "test_pipeline"},
+            "pipeline_info": {"pipeline_name": "test_pipeline"},
         }
 
         # Act
@@ -125,7 +125,7 @@ class TestStartPipelineRun:
         mock_new_run.info.run_id = "new_run_id"
         mock_mlflow.start_run.return_value = mock_new_run
 
-        state = {"environment_type": "brz", "current_pipeline_data": {"pipeline_name": "pipe1"}}
+        state = {"environment_type": "brz", "pipeline_info": {"pipeline_name": "pipe1"}}
 
         # Act
         start_pipeline_run(state)
@@ -230,7 +230,7 @@ class TestTrackNodeDecorator:
 
         state = {
             "environment_type": "brz",
-            "current_pipeline_data": {"pipeline_name": "test_pipe"},
+            "pipeline_info": {"pipeline_name": "test_pipe"},
         }
 
         @track_node("tool")
@@ -320,7 +320,7 @@ class TestTrackNodeDecorator:
 
         state = {
             "environment_type": "brz",
-            "current_pipeline_data": {"pipeline_name": "kwarg_test"},
+            "pipeline_info": {"pipeline_name": "kwarg_test"},
         }
 
         @track_node("tool")

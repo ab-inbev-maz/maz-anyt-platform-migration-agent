@@ -184,7 +184,7 @@ flowchart TB
 
 ### Paso 2: Framework_creator
 * **Tipo de Nodo:** Nodo-Herramienta (Puro Python) | **`:::tool`**
-* **Acción:** Este nodo toma el `current_pipeline_data` (del manifiesto) del estado.
+* **Acción:** Este nodo toma el `pipeline_info` (del manifiesto) del estado.
 * **Lógica:** Es un `if/else` que **detecta** el `environment_type` (`brz`/`slv`/`gld`) parseando el nombre de la tabla (ej. `...brz_maz_...`).
 * **Lógica (Comandos):** Basado en el tipo detectado, **crea** los *template files* de Hopsflow o Brewtiful ejecutando los comandos de `engineeringstore`:
     ```bash
@@ -195,7 +195,7 @@ flowchart TB
 
 ### Paso 3: Extractor_Tool
 * **Tipo de Nodo:** Nodo-Herramienta (Puro Python) | **`:::tool`**
-* **Acción:** Este nodo se activa después del `Framework_creator`. Toma las `credentials` y el `current_pipeline_data` del estado.
+* **Acción:** Este nodo se activa después del `Framework_creator`. Toma las `credentials` y el `pipeline_info` del estado.
 * **Lógica:** Es una función de Python determinista. **No usa un LLM**.
     * Llama a la API de GitHub para obtener el JSON de ADF.
     * Llama a la API de DataFactory (o GitHub) para obtener el *notebook*.
@@ -313,7 +313,7 @@ class MigrationGraphState(TypedDict):
     pipelines_to_migrate: List[Dict[str, Any]] # La lista de trabajo del manifiesto
     
     # El pipeline individual que se está procesando actualmente en el bucle
-    current_pipeline_data: Optional[Dict[str, Any]] 
+    pipeline_info: Optional[Dict[str, Any]] 
 
     
     # --- SECCIÓN 2: FRAMEWORK Y PLANTILLAS ---

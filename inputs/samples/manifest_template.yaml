@@ -1,4 +1,0 @@
-# metadata.yml input for the agent.
-trigger_name: tr_slv_maz_tech_metadata_sap_pr0_mx_d_0500
-access_groups:
-  - AADS_A_Brewdat-ghq-p-ghq-mark-mroi-rw

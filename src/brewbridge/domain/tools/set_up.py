@@ -12,7 +12,7 @@ from brewbridge.domain.services.read_manifest_and_check_api import ManifestPrefl
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.infrastructure.observability import track_node
 from brewbridge.utils.exceptions import ManifestNotFoundError, ManifestParseError
-from brewbridge.utils.yaml_utils import load_manifest
+from brewbridge.utils.manifest_yaml_utils import load_manifest
 
 logger = get_logger(__name__)
 

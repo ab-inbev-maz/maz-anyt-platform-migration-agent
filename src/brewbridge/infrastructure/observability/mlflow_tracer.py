@@ -47,7 +47,7 @@ def _extract_common_tags_from_state(state: Mapping[str, Any]) -> Dict[str, Any]:
     The goal is to be useful for observability without leaking the full state.
     """
     environment_type: Optional[str] = state.get("environment_type")
-    current_pipeline = state.get("current_pipeline_data") or {}
+    current_pipeline = state.get("pipeline_info") or {}
     pipeline_name: Optional[str] = current_pipeline.get("pipeline_name")
 
     return {

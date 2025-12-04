@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field, field_validator
 class MigrationGraphState(BaseModel):
     # Initialization fields (filled by Read_Manifest_and_Check_API)
     manifest_path: Optional[str] = Field(default=None)
+    source_platform: Optional[str] = Field(default=None)
     credentials: Optional[Dict[str, str]] = Field(default=None)
     api_connectivity_ok: Optional[bool] = Field(default=None)
-    pipelines_to_migrate: Optional[List[Dict[str, Any]]] = Field(default=None)
 
     # Framework repositories (filled by Repo_Cloner_Tool)
     repos_cloned: Optional[List[str]] = Field(default=None)
@@ -18,13 +18,13 @@ class MigrationGraphState(BaseModel):
     # Filled by ExtractorTool (Output de la Estrategia 3.0)
     raw_artifacts: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Contains the complete extraction structure: Triggers, Pipelines, Global Params, Code and Rules."
+        description="Contains the complete extraction structure: Triggers, Pipelines, Global Params, Code and Rules.",
     )
 
     # Existing fields
     environment_type: Optional[str] = Field(default=None)
     normalized_schema_v4: Optional[Dict[str, Any]] = Field(default=None)
-    current_pipeline_data: Optional[Dict[str, Any]] = Field(default=None)
+    pipeline_info: Optional[Dict[str, Any]] = Field(default=None)
     template_path: Optional[str] = Field(default=None)
 
     @field_validator("environment_type")
