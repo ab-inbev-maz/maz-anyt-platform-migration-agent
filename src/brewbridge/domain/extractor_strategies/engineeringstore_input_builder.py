@@ -140,3 +140,26 @@ class EngineeringStoreInputBuilderFactory:
 def build_engineeringstore_inputs(schema: Dict, metadata: Dict, environment: str) -> str:
     strategy = EngineeringStoreInputBuilderFactory.get(environment)
     return strategy.build(schema, metadata)
+
+
+def build_validation_command_args(environment_type: str) -> list[str]:
+    """
+    Return the CLI arguments to validate dags for the given environment.
+
+    gld -> transformation --validate-dags
+    brz/slv -> ingestion --validate-dags
+    """
+    if environment_type == "gld":
+        return ["engineeringstore", "transformation", "--validate-dags"]
+
+    if environment_type in {"brz", "slv"}:
+        return ["engineeringstore", "ingestion", "--validate-dags"]
+
+    raise ValueError(f"Invalid environment_type '{environment_type}'. Expected brz, slv, or gld.")
+
+
+def combine_cli_output(stdout: str, stderr: str) -> str:
+    """Combine stdout and stderr into a single string, preserving both when present."""
+    if stdout and stderr:
+        return f"{stdout}\n{stderr}"
+    return stdout or stderr

@@ -33,6 +33,15 @@ class EngineeringStoreCommand:
     needs_input: bool = False
 
 
+@dataclass(frozen=True)
+class EngineeringStoreResult:
+    """Represents the stdout, stderr and exit code of an engineeringstore CLI run."""
+
+    stdout: str
+    stderr: str
+    returncode: int
+
+
 class EngineeringStoreCLI:
     """Facade wrapper responsible for executing `engineeringstore` CLI commands."""
 
@@ -51,7 +60,9 @@ class EngineeringStoreCLI:
 
         raise ValueError(f"Invalid table_type '{table_type}'. Expected 'gold', 'brz', or 'slv'.")
 
-    def run(self, es_command: EngineeringStoreCommand, input_text: Optional[str] = None) -> str:
+    def _execute(
+        self, es_command: EngineeringStoreCommand, input_text: Optional[str] = None
+    ) -> EngineeringStoreResult:
         cmd_list = es_command.command
         working_dir = self._resolve_working_dir(es_command.table_type)
 
@@ -77,7 +88,7 @@ class EngineeringStoreCLI:
                 check=False,
             )
 
-        except FileNotFoundError as e:
+        except FileNotFoundError as e:  # pragma: no cover - defensive guard
             raise EngineeringStoreNotInstalledError(
                 "engineeringstore CLI is not installed or available in PATH"
             ) from e
@@ -87,22 +98,40 @@ class EngineeringStoreCLI:
                 f"engineeringstore CLI timed out after {self.timeout} seconds"
             ) from e
 
-        stdout = process.stdout or ""
-        stderr = process.stderr or ""
+        result = EngineeringStoreResult(
+            stdout=process.stdout or "", stderr=process.stderr or "", returncode=process.returncode
+        )
 
-        log_cli_output(stdout=stdout, stderr=stderr)
+        log_cli_output(stdout=result.stdout, stderr=result.stderr)
 
         debug_env = os.environ.get("DEBUG", "false").lower() == "true"
         if debug_env:
-            if stdout.strip():
-                self.logger.debug(f"[engineeringstore stdout]\n{stdout}")
+            if result.stdout.strip():
+                self.logger.debug(f"[engineeringstore stdout]\n{result.stdout}")
 
-            if stderr.strip():
-                self.logger.debug(f"[engineeringstore stderr]\n{stderr}")
+            if result.stderr.strip():
+                self.logger.debug(f"[engineeringstore stderr]\n{result.stderr}")
 
-        if process.returncode != 0:
+        return result
+
+    def run_with_result(
+        self,
+        es_command: EngineeringStoreCommand,
+        input_text: Optional[str] = None,
+        raise_on_error: bool = True,
+    ) -> EngineeringStoreResult:
+        result = self._execute(es_command, input_text=input_text)
+
+        if raise_on_error and result.returncode != 0:
             raise EngineeringStoreExecutionError(
-                f"CLI returned exit code {process.returncode}.\nSTDERR:\n{stderr}"
+                f"CLI returned exit code {result.returncode}.\nSTDERR:\n{result.stderr}",
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
             )
 
-        return stdout
+        return result
+
+    def run(self, es_command: EngineeringStoreCommand, input_text: Optional[str] = None) -> str:
+        result = self.run_with_result(es_command, input_text=input_text, raise_on_error=True)
+        return result.stdout

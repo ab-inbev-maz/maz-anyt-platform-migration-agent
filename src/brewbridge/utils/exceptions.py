@@ -67,7 +67,13 @@ class EngineeringStoreExecutionError(EngineeringStoreError):
         - template generation failures
     """
 
-    pass
+    def __init__(
+        self, message: str, stdout: str = "", stderr: str = "", returncode: int | None = None
+    ):
+        super().__init__(message)
+        self.stdout = stdout or ""
+        self.stderr = stderr or ""
+        self.returncode = returncode
 
 
 class EngineeringStoreTimeoutError(EngineeringStoreError):

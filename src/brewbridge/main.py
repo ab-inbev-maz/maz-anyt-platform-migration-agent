@@ -1,4 +1,5 @@
 # Import read_manifest_and_check_api tool
+import json
 import os
 from io import BytesIO
 from pathlib import Path
@@ -29,7 +30,7 @@ def main():
     state["manifest_path"] = str(manifest_path)
     state.update(
         {
-            "environment_type": "brz",
+            "environment_type": "slv",
             "normalized_schema_v4": {
                 "zone": "maz",
                 "landing_zone": "maz",
@@ -91,7 +92,11 @@ def main():
 
         final_state_obj = MigrationGraphState(**final_state)
         logger.info("✅ Grafo finalizado exitosamente.")
-        logger.debug(f"Estado Final: {final_state_obj}")
+        # Save final_state_obj to final_state.json in the project root
+        root_path = Path(__file__).parent.parent.parent
+        with open(root_path / "final_state.json", "w") as f:
+            json.dump(final_state_obj.model_dump(), f, indent=2)
+        # logger.debug(f"Estado Final: {final_state_obj}")
 
         end_pipeline_run(status="success")
         logger.info("🎥 Observabilidad finalizada (Status: Success)")
