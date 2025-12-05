@@ -26,6 +26,12 @@ class MigrationGraphState(BaseModel):
     normalized_schema_v4: Optional[Dict[str, Any]] = Field(default=None)
     pipeline_info: Optional[Dict[str, Any]] = Field(default=None)
     template_path: Optional[str] = Field(default=None)
+    validation_output: Optional[str] = Field(default=None)
+    validation_stdout: Optional[str] = Field(default=None)
+    validation_stderr: Optional[str] = Field(default=None)
+    validation_return_code: Optional[int] = Field(default=None)
+    validation_passed: Optional[bool] = Field(default=None)
+    parsed_validation_errors: Optional[List[Dict[str, Any]]] = Field(default=None)
 
     @field_validator("environment_type")
     def validate_environment(cls, val):

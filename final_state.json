@@ -1,0 +1,2401 @@
+{
+  "manifest_path": "/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/inputs/samples/manifest.yaml",
+  "source_platform": "platform_3_0",
+  "credentials": {
+  },
+  "api_connectivity_ok": true,
+  "repos_cloned": [
+    "brewdat-pltfrm-ghq-tech-hopsflow",
+    "brewtiful"
+  ],
+  "raw_artifacts": {
+    "notebooks_source": {
+      "data_integration/sap_pr0/load_brz_generic_parquet.py": "# Databricks notebook source\nimport json\n\ndbutils.widgets.text(\"brewdat_library_version\", \"v1.1.5\", \"01 - brewdat_library_version\")\nbrewdat_library_version = dbutils.widgets.get(\"brewdat_library_version\")\nprint(f\"{brewdat_library_version = }\")\n\n\ndbutils.widgets.text(\"source_system\", \"sap_g_erp\", \"02 - source_system\")\nsource_system = dbutils.widgets.get(\"source_system\")\nprint(f\"{source_system = }\")\n\ndbutils.widgets.text(\"source_table\", \"bsak\", \"03 - source_table\")\nsource_table = dbutils.widgets.get(\"source_table\")\nprint(f\"{source_table = }\")\n\ndbutils.widgets.text(\"target_zone\", \"europe\", \"04 - target_zone\")\ntarget_zone = dbutils.widgets.get(\"target_zone\")\nprint(f\"{target_zone = }\")\n\ndbutils.widgets.text(\"target_business_domain\", \"supl\", \"05 - target_business_domain\")\ntarget_business_domain = dbutils.widgets.get(\"target_business_domain\")\nprint(f\"{target_business_domain = }\")\n\ndbutils.widgets.text(\"target_business_subdomain\", \"supl\", \"06 - target_business_subdomain\")\ntarget_business_subdomain = dbutils.widgets.get(\"target_business_subdomain\")\nprint(f\"{target_business_subdomain = }\")\n\ndbutils.widgets.text(\"target_database\", \"brz_eur_supl_sap_g_erp\", \"07 - target_database\")\ntarget_database = dbutils.widgets.get(\"target_database\")\nprint(f\"{target_database = }\")\n\ndbutils.widgets.text(\"target_table\", \"bsak\", \"08 - target_table\")\ntarget_table = dbutils.widgets.get(\"target_table\")\nprint(f\"{target_table = }\")\n\ndbutils.widgets.text(\"reset_stream_checkpoint\", \"false\", \"09 - reset_stream_checkpoint\")\nreset_stream_checkpoint = dbutils.widgets.get(\"reset_stream_checkpoint\")\nprint(f\"{reset_stream_checkpoint = }\")\n\ndbutils.widgets.text(\"source_raw_zone\", \"copec\", \"10 - source_raw_zone\")\nsource_raw_zone = dbutils.widgets.get(\"source_raw_zone\")\nprint(f\"{source_raw_zone = }\")\n\ndbutils.widgets.text(\"source_system_raw\", \"sap_ecc\", \"11 - source_system_raw\")\n#source_system_raw = dbutils.widgets.get(\"source_system_raw\")\nsource_system_raw = 'sap_dop'\nprint(f\"{source_system_raw = }\")\n\ndbutils.widgets.text(\"additional_parameters\", \" { \\\"partition_column\\\":  \\\"erdat\\\", \\\"partition_date_format\\\" : \\\"yyyyMM\\\" } \",\"12 - additional_parameters\")\nadditional_parameters = dbutils.widgets.get(\"additional_parameters\")\nadditional_parameters = json.loads(additional_parameters)\nprint(f\"{additional_parameters = }\")\n\n# COMMAND ----------\n\nimport sys\nfrom pyspark.sql import functions as F\n\n# Import BrewDat Library modules and share dbutils globally\nsys.path.append(f\"/Workspace/Repos/brewdat_library/{brewdat_library_version}\")\nfrom brewdat.data_engineering import common_utils, lakehouse_utils, read_utils, transform_utils, write_utils\ncommon_utils.set_global_dbutils(dbutils)\n\n# Print a module's help\n# help(read_utils)\n\n# COMMAND ----------\n\n# MAGIC %run \"../set_project_context\"\n\n# COMMAND ----------\n\n# Configure SPN for all ADLS access using AKV-backed secret scope\ncommon_utils.configure_spn_access_for_adls(\n    storage_account_names=[\n        adls_raw_bronze_storage_account_name,adls_raw_storage_account_name,\n    ],\n    key_vault_name=key_vault_name, \n    spn_client_id=spn_client_id,\n    spn_secret_name=spn_secret_name \n)\n\n\n\n# COMMAND ----------\n\nraw_location = f\"{lakehouse_raw_root}/data/{target_zone}/{target_business_domain}/{source_system}/{source_table}\"\nprint(f\"{raw_location = }\")\n\n# COMMAND ----------\n\nraw_df = (\n    read_utils.read_raw_streaming_dataframe(\n            file_format=read_utils.RawFileFormat.PARQUET,\n            location=f\"{raw_location}/*/*.parquet\",\n            schema_location=raw_location,\n            cast_all_to_string=True,\n            handle_rescued_data=False,\n            additional_options={\n                    \"cloudFiles.useIncrementalListing\": \"false\",\n             },\n    )\n    .withColumn(\"__src_file\", F.input_file_name())\n    .withColumn(\"__ref_date\", F.to_date(\"TARGET_APPLY_DT\", format=\"yyyy-MM-dd\"))\n    .transform(transform_utils.clean_column_names)\n    .transform(transform_utils.create_or_replace_audit_columns)\n    .drop(\"aerunid\", \"aerecno\", \"aedattm\",\"__process_date\",)  # Columns to be dropped\n)\n\n\nif additional_parameters['partition_column'] != '':\n    raw_df = raw_df.withColumn(\"__partition_column\", F.date_format(additional_parameters['partition_column'], additional_parameters['partition_date_format']).cast(\"int\"))\n    partition_columns  = ['__partition_column']\nelse:\n    partition_columns = []\n# display(raw_df)\n\n# COMMAND ----------\n\nfrom pyspark.sql.functions import lower\nfor col_name in raw_df.columns: \n    lower_col_name=col_name.lower()\n    raw_df=raw_df.withColumnRenamed(col_name,lower_col_name)\n\nfor col_name in raw_df.columns:\n    if col_name == 'opflag':\n        col_name_changed = 'op_ind'\n    else:\n        col_name_changed = col_name\n    \n    raw_df=raw_df.withColumnRenamed(col_name,col_name_changed)\n\n#display(raw_df)\n\n\n# COMMAND ----------\n\n target_location = lakehouse_utils.generate_bronze_table_location(\n     lakehouse_bronze_root=lakehouse_bronze_root,\n     target_zone=target_zone,\n     target_business_domain=target_business_domain,\n     source_system=source_system,\n     table_name=target_table,\n  \n )\n print(f\"{target_location = }\")\n\ntarget_location= f\"{lakehouse_bronze_root}/data/{target_zone}/{target_business_domain}/{source_system}/{target_table.lower()}/\"\nprint(f\"{target_location = }\")\n\n# COMMAND ----------\n\nresults = write_utils.write_stream_delta_table(\n    df=raw_df,\n    location=target_location,\n    database_name=target_database,\n    table_name=target_table,\n    load_type=write_utils.LoadType.APPEND_ALL,\n    partition_columns=partition_columns,\n    schema_evolution_mode=write_utils.SchemaEvolutionMode.ADD_NEW_COLUMNS,\n    enable_change_data_feed=True,\n    enable_caching=False,\n    reset_checkpoint=(reset_stream_checkpoint.lower() == \"true\"),\n)\nprint(results)\n\n# COMMAND ----------\n\ncommon_utils.exit_with_object(results)\n",
+      "data_integration/sap_pr0/load_slv_generic_parquet.py": "# Databricks notebook source\nimport json\n\ndbutils.widgets.text(\"brewdat_library_version\", \"v1.1.5\", \"01 - brewdat_library_version\")\nbrewdat_library_version = dbutils.widgets.get(\"brewdat_library_version\")\nprint(f\"{brewdat_library_version = }\")\n\ndbutils.widgets.text(\"source_system\", \"sap_ecc_ero\", \"02 - source_system\")\nsource_system = dbutils.widgets.get(\"source_system\")\nprint(f\"{source_system = }\")\n\ndbutils.widgets.text(\"source_database\", \"brz_ghq_tech_sap_ecc_ero\", \"03 - source_database\")\nsource_database = dbutils.widgets.get(\"source_database\")\nprint(f\"{source_database = }\")\n\ndbutils.widgets.text(\"source_table\", \"afih\", \"04 - source_table\")\nsource_table = dbutils.widgets.get(\"source_table\")\nprint(f\"{source_table = }\")\n\ndbutils.widgets.text(\"column_mapping\", \"[]\", \"05 - column_mapping\")\ncolumn_mapping = dbutils.widgets.get(\"column_mapping\")\ncolumn_mapping = json.loads(column_mapping)\nprint(f\"{column_mapping = }\")\n\ndbutils.widgets.text(\"key_columns\", '[\"MANDT\", \"AUFNR\"]', \"06 - key_columns\")\nkey_columns = dbutils.widgets.get(\"key_columns\")\nkey_columns = json.loads(key_columns)\nprint(f\"{key_columns = }\")\n\ndbutils.widgets.text(\"watermark_column\", \"\"\"[\"source_commit_ts\", \"header__change_seq\"]\"\"\", \"07 - watermark_column\")\nwatermark_column = dbutils.widgets.get(\"watermark_column\")\nwatermark_column = json.loads(watermark_column)\nprint(f\"{watermark_column = }\")\n\ndbutils.widgets.text(\"partition_columns\", \"[]\", \"08 - partition_columns\")\npartition_columns = dbutils.widgets.get(\"partition_columns\")\npartition_columns = json.loads(partition_columns)\nprint(f\"{partition_columns = }\")\n\ndbutils.widgets.text(\"load_type\", \"UPSERT\", \"09 - load_type\")\nload_type = dbutils.widgets.get(\"load_type\")\nprint(f\"{load_type = }\")\n\ndbutils.widgets.text(\"target_zone\", \"ghq\", \"10 - target_zone\")\ntarget_zone = dbutils.widgets.get(\"target_zone\")\nprint(f\"{target_zone = }\")\n\ndbutils.widgets.text(\"target_business_domain\", \"tech\", \"11 - target_business_domain\")\ntarget_business_domain = dbutils.widgets.get(\"target_business_domain\")\nprint(f\"{target_business_domain = }\")\n\ndbutils.widgets.text(\"target_business_subdomain\", \"tech\", \"12 - target_business_subdomain\")\ntarget_business_subdomain = dbutils.widgets.get(\"target_business_subdomain\")\nprint(f\"{target_business_subdomain = }\")\n\ndbutils.widgets.text(\"target_database\", \"slv_ghq_tech_sap_ecc_ero\", \"13 - target_database\")\ntarget_database = dbutils.widgets.get(\"target_database\")\nprint(f\"{target_database = }\")\n\ndbutils.widgets.text(\"target_table\", \"afih\", \"14 - target_table\")\ntarget_table = dbutils.widgets.get(\"target_table\")\nprint(f\"{target_table = }\")\n\ndbutils.widgets.text(\"reset_stream_checkpoint\", \"false\", \"15 - reset_stream_checkpoint\")\nreset_stream_checkpoint = dbutils.widgets.get(\"reset_stream_checkpoint\")\nprint(f\"{reset_stream_checkpoint = }\")\n\ndbutils.widgets.text(\n    \"additional_parameters\",\n    \"\"\"{\n        \"enable_change_data_feed\": \"true\"\n    }\"\"\",\n    \"15 - additional_parameters\",\n)\nadditional_parameters = dbutils.widgets.get(\"additional_parameters\")\nadditional_parameters = json.loads(additional_parameters)\nprint(f\"{additional_parameters = }\")\n\nenable_change_data_feed = additional_parameters.get(\"enable_change_data_feed\")\nprint(f\"{enable_change_data_feed = }\")\n\n# COMMAND ----------\n\nimport sys\n\n# Import BrewDat Library modules and share dbutils globally\nsys.path.append(f\"/Workspace/Repos/brewdat_library/{brewdat_library_version}\")\nfrom brewdat.data_engineering import read_utils, common_utils, data_quality_utils, lakehouse_utils, transform_utils, write_utils\ncommon_utils.set_global_dbutils(dbutils)\n\n# Print a module's help\n# help(transform_utils)\n\n# COMMAND ----------\n\n# MAGIC %run \"../set_project_context\"\n\n# COMMAND ----------\n\n# Configure SPN for all ADLS access using AKV-backed secret scope\ncommon_utils.configure_spn_access_for_adls(\n    storage_account_names=[\n        adls_raw_bronze_storage_account_name,\n        adls_silver_gold_storage_account_name,\n    ],\n    key_vault_name=key_vault_name,\n    spn_client_id=spn_client_id,\n    spn_secret_name=spn_secret_name,\n)\n\n# COMMAND ----------\n\nbronze_df = (\n    read_utils.read_raw_streaming_dataframe(\n        file_format=read_utils.RawFileFormat.DELTA,\n        table_name=f\"`{source_database}`.`{source_table}`\",\n    )\n    # Ignore \"Before Image\" records from update operations\n    # .filter(\"header__change_oper is null or header__change_oper != 'B'\") ## this `header__change_oper` cannot be resolved. \n)\n\n# COMMAND ----------\n\nfrom pyspark.sql.functions import when\n\ntry:\n    # Apply data quality checks based on given column mappings\n    dq_checker = data_quality_utils.DataQualityChecker(bronze_df)\n    mappings = [common_utils.ColumnMapping(**mapping) for mapping in column_mapping]\n    for mapping in mappings:\n        column_name = mapping.source_column_name\n        data_type = mapping.target_data_type.lower()\n\n        if data_type == \"date\" or data_type == \"timestamp\":\n            dq_checker.df = (\n                dq_checker.df.withColumn(\n                    column_name,\n                    when((bronze_df[column_name] == \"00000000\") | (bronze_df[column_name] == \"\"), \"1900-01-01\")\n                    .when((bronze_df[column_name] == \"0000-00-00\") | (bronze_df[column_name] == \"\"), \"1900-01-01\")\n                    .otherwise(\n                        bronze_df[column_name]\n                    )\n                )\n            )\n        \n        dq_checker = dq_checker.check_column_type_cast(\n            column_name,\n            data_type,\n            date_format=mapping.date_format,\n        )\n        \n        if not mapping.nullable:\n            dq_checker = dq_checker.check_column_is_not_null(mapping.source_column_name)\n\n    bronze_dq_df = dq_checker.build_df()\n\n    # display(bronze_dq_df)\n\nexcept Exception:\n    common_utils.exit_with_last_exception()\n\n# COMMAND ----------\n\n# Preserve data quality results\ndq_results_column = common_utils.ColumnMapping(\n    source_column_name=data_quality_utils.DQ_RESULTS_COLUMN,\n    target_data_type=\"array<string>\",\n)\nmappings.append(dq_results_column)\n\n# Apply column mappings and retrieve list of unmapped columns\ntransformed_df, unmapped_columns = transform_utils.apply_column_mappings(df=bronze_dq_df, mappings=mappings)\n\n# display(transformed_df)\n\n# COMMAND ----------\n\naudit_df = transform_utils.create_or_replace_audit_columns(transformed_df)\n\n# COMMAND ----------\n\n target_location = lakehouse_utils.generate_silver_table_location(\n     lakehouse_silver_root=lakehouse_silver_root,\n     target_zone=target_zone,\n     target_business_domain=target_business_domain,\n     source_system=source_system,\n     table_name=target_table,\n )\n print(f\"{target_location = }\")\n\n\n# COMMAND ----------\n\n\ndef deduplicate(df):\n        return transform_utils.deduplicate_records(\n        df=df,\n        key_columns=key_columns,\n        watermark_column=watermark_column,\n    )\n\n\n\n# COMMAND ----------\n\nresults = write_utils.write_stream_delta_table(\n    df=audit_df,\n    location=target_location,\n    database_name=target_database,\n    table_name=target_table,\n    load_type=load_type,\n    key_columns=key_columns,\n    partition_columns=partition_columns,\n    schema_evolution_mode=write_utils.SchemaEvolutionMode.ADD_NEW_COLUMNS,\n    bad_record_handling_mode=write_utils.BadRecordHandlingMode.WARN,\n    update_condition_for_upsert=\"source.source_commit_ts >= target.source_commit_ts\",\n    enable_change_data_feed=(enable_change_data_feed.lower() == \"true\"),\n    transform_microbatch=deduplicate,\n    reset_checkpoint=(reset_stream_checkpoint.lower() == \"true\"),\n)\n\nprint(results)\n\n# COMMAND ----------\n\n# Warn in case of relevant unmapped columns\nunmapped_columns = list(filter(lambda c: not c.startswith(\"header__\"), unmapped_columns))\nif unmapped_columns:\n    formatted_columns = \", \".join(f\"`{col}`\" for col in unmapped_columns)\n    unmapped_warning = \"WARNING: the following columns are not mapped: \" + formatted_columns\n    if results.error_message:\n        results.error_message += \"; \"\n    results.error_message += unmapped_warning\n    if results.error_details:\n        results.error_details += \"; \"\n    results.error_details += unmapped_warning\n\n\n# COMMAND ----------\n\ncommon_utils.exit_with_object(results)\n"
+    },
+    "quality_rules": {
+      "mx_dd02l": "data_subject:\n  catalog: brewdat_uc_maz_prod\n  database: slv_maz_tech_sap_pr0\n  query: select * from slv_maz_tech_sap_pr0.mx_dd02l where op_ind <> 'D'\n  table: mx_dd02l\nexpectations:\n- arguments:\n    column: tabname\n  columns:\n  - tabname\n  handler: completeness\n- arguments:\n    columns:\n    - tabname\n    - as4local\n    - as4vers\n  columns:\n  - tabname\n  - as4local\n  - as4vers\n  handler: uniqueness\n- arguments:\n    column: as4local\n  columns:\n  - as4local\n  handler: completeness\n- arguments:\n    column: as4vers\n  columns:\n  - as4vers\n  handler: completeness\n- arguments:\n    arrival_frequency: 0-59 11,12 * * *\n    as_date: false\n    stale_after: 30\n    stale_time_mins: 30\n    timeliness_columns:\n    - __insert_gmt_ts\n    - __update_gmt_ts\n  columns:\n  - __insert_gmt_ts\n  - __update_gmt_ts\n  handler: timeliness\n- title: Expectation validity_patter for tabname (Generated by DQ Team - Review Required)\n  handler: validity_pattern\n  criticality: LOW\n  columns:\n  - tabname\n  filter: tabname IS NOT NULL OR tabname != ''\n  arguments:\n    pattern: \\w+\n    column: tabname\n",
+      "mx_dd03l": "data_subject:\n  catalog: brewdat_uc_maz_prod\n  database: slv_maz_tech_sap_pr0\n  query: select * from slv_maz_tech_sap_pr0.mx_dd03l where op_ind <> 'D'\n  table: mx_dd03l\nexpectations:\n- arguments:\n    column: tabname\n    blank_as_null: false\n  columns:\n  - tabname\n  handler: completeness\n- arguments:\n    columns:\n    - tabname\n    - fieldname\n    - as4local\n    - as4vers\n    - position\n  columns:\n  - tabname\n  - fieldname\n  - as4local\n  - as4vers\n  - position\n  handler: uniqueness\n- arguments:\n    column: fieldname\n    blank_as_null: false\n  columns:\n  - fieldname\n  handler: completeness\n- arguments:\n    column: as4local\n    blank_as_null: false\n  columns:\n  - as4local\n  handler: completeness\n- arguments:\n    column: as4vers\n    blank_as_null: false\n  columns:\n  - as4vers\n  handler: completeness\n- arguments:\n    column: position\n    blank_as_null: false\n  columns:\n  - position\n  handler: completeness\n- arguments:\n    column: dbposition\n    blank_as_null: false\n  columns:\n  - dbposition\n  handler: completeness\n- arguments:\n    column: anonymous\n    blank_as_null: false\n  columns:\n  - anonymous\n  handler: completeness\n- arguments:\n    column: outputstyle\n    blank_as_null: false\n  columns:\n  - outputstyle\n  handler: completeness\n- arguments:\n    arrival_frequency: 0-59 11,12 * * *\n    as_date: false\n    stale_after: 30\n    stale_time_mins: 30\n    timeliness_columns:\n    - __insert_gmt_ts\n    - __update_gmt_ts\n  columns:\n  - __insert_gmt_ts\n  - __update_gmt_ts\n  handler: timeliness\n- title: Expectation validity_patter for tabname (Generated by DQ Team - Review Required)\n  handler: validity_pattern\n  criticality: LOW\n  columns:\n  - tabname\n  filter: tabname IS NOT NULL OR tabname != ''\n  arguments:\n    pattern: \\w+\n    column: tabname\n",
+      "mx_dd04t": "data_subject:\n  catalog: brewdat_uc_maz_prod\n  database: slv_maz_tech_sap_pr0\n  table: mx_dd04t\nexpectations:\n- arguments:\n    column: rollname\n  columns:\n  - rollname\n  handler: completeness\n- arguments:\n    columns:\n    - rollname\n    - ddlanguage\n    - as4local\n    - as4vers\n  columns:\n  - rollname\n  - ddlanguage\n  - as4local\n  - as4vers\n  handler: uniqueness\n- arguments:\n    column: ddlanguage\n  columns:\n  - ddlanguage\n  handler: completeness\n- arguments:\n    column: as4local\n  columns:\n  - as4local\n  handler: completeness\n- arguments:\n    column: as4vers\n  columns:\n  - as4vers\n  handler: completeness\n- arguments:\n    column: reptext\n    max_len: 26\n    min_len: 0\n  columns:\n  - reptext\n  criticality: LOW\n  handler: validity_length\n  threshold: 0.9\n  title: Expectation completeness for reptext (Generated by DQ Team - Review Required)\n- arguments:\n    arrival_frequency: 0 5 * * *\n    as_date: false\n    expected_within: 1440\n    stale_after: 1440\n    timeliness_columns:\n    - __insert_gmt_ts\n    - __update_gmt_ts\n    timezone: Etc/GMT-6\n  columns:\n  - __insert_gmt_ts\n  - __update_gmt_ts\n  handler: timeliness\n  title: Expectation timeliness (Generated by DQ Team - Review Required)\n",
+      "mx_dd08l": "data_subject:\n  catalog: brewdat_uc_maz_prod\n  database: slv_maz_tech_sap_pr0\n  table: mx_dd08l\nexpectations:\n- arguments:\n    column: tabname\n    blank_as_null: false\n  columns:\n  - tabname\n  handler: completeness\n- arguments:\n    columns:\n    - tabname\n    - fieldname\n    - as4local\n    - as4vers\n  columns:\n  - tabname\n  - fieldname\n  - as4local\n  - as4vers\n  handler: uniqueness\n- arguments:\n    column: fieldname\n    blank_as_null: false\n  columns:\n  - fieldname\n  handler: completeness\n- arguments:\n    column: as4local\n    blank_as_null: false\n  columns:\n  - as4local\n  handler: completeness\n- arguments:\n    column: as4vers\n    blank_as_null: false\n  columns:\n  - as4vers\n  handler: completeness\n- arguments:\n    column: frkart\n    max_len: 3\n    min_len: 0\n  columns:\n  - frkart\n  criticality: LOW\n  handler: validity_length\n  threshold: 0.9\n  title: Expectation completeness for frkart (Generated by DQ Team - Review Required)\n- arguments:\n    arrival_frequency: 0 5 * * *\n    as_date: false\n    expected_within: 1440\n    stale_after: 1440\n    timeliness_columns:\n    - __insert_gmt_ts\n    - __update_gmt_ts\n    timezone: Etc/GMT-6\n  columns:\n  - __insert_gmt_ts\n  - __update_gmt_ts\n  handler: timeliness\n  title: Expectation timeliness (Generated by DQ Team - Review Required)\n",
+      "mx_dd02t": "data_subject:\n  catalog: brewdat_uc_maz_prod\n  database: slv_maz_tech_sap_pr0\n  query: select * from slv_maz_tech_sap_pr0.mx_dd02t where op_ind <> 'D'\n  table: mx_dd02t\nexpectations:\n- arguments:\n    column: tabname\n  columns:\n  - tabname\n  handler: completeness\n- arguments:\n    columns:\n    - tabname\n    - ddlanguage\n    - as4local\n    - as4vers\n  columns:\n  - tabname\n  - ddlanguage\n  - as4local\n  - as4vers\n  handler: uniqueness\n- arguments:\n    column: ddlanguage\n  columns:\n  - ddlanguage\n  handler: completeness\n- arguments:\n    column: as4local\n  columns:\n  - as4local\n  handler: completeness\n- arguments:\n    column: as4vers\n  columns:\n  - as4vers\n  handler: completeness\n- arguments:\n    arrival_frequency: 0-59 11,12 * * *\n    as_date: false\n    stale_after: 30\n    stale_time_mins: 30\n    timeliness_columns:\n    - __insert_gmt_ts\n    - __update_gmt_ts\n  columns:\n  - __insert_gmt_ts\n  - __update_gmt_ts\n  handler: timeliness\n- arguments:\n    column: tabname\n    pattern: \\w+\n  columns:\n  - tabname\n  criticality: LOW\n  handler: validity_pattern\n  threshold: 0.99\n  title: Expectation validity_pattern for tabname (Generated by DQ Team - Review Required)\n\n",
+      "mx_dd03t": "data_subject:\n  catalog: brewdat_uc_maz_prod\n  database: slv_maz_tech_sap_pr0\n  query: select * from slv_maz_tech_sap_pr0.mx_dd03t where op_ind <> 'D'\n  table: mx_dd03t\nexpectations:\n- arguments:\n    column: tabname\n    blank_as_null: false\n  columns:\n  - tabname\n  handler: completeness\n- arguments:\n    columns:\n    - tabname\n    - ddlanguage\n    - as4local\n    - fieldname\n  columns:\n  - tabname\n  - ddlanguage\n  - as4local\n  - fieldname\n  handler: uniqueness\n- arguments:\n    column: ddlanguage\n    blank_as_null: false\n  columns:\n  - ddlanguage\n  handler: completeness\n- arguments:\n    column: as4local\n    blank_as_null: false\n  columns:\n  - as4local\n  handler: completeness\n- arguments:\n    column: fieldname\n    blank_as_null: false\n  columns:\n  - fieldname\n  handler: completeness\n- arguments:\n    column: ddtext\n    blank_as_null: false\n  columns:\n  - ddtext\n  handler: completeness\n"
+    },
+    "trigger_json": {
+      "name": "tr_slv_maz_tech_metadata_sap_pr0_mx_d_0500",
+      "properties": {
+        "annotations": [],
+        "runtimeState": "Started",
+        "pipelines": [
+          {
+            "pipelineReference": {
+              "referenceName": "slv_maz_tech_sap_pr0_mx_d",
+              "type": "PipelineReference"
+            },
+            "parameters": {
+              "items_to_process": {
+                "batch_name_suffix": "slv_maz_tech_sap_pr0_mx_d",
+                "pipelines": [
+                  {
+                    "load_to_bronze": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+                      "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "reset_stream_checkpoint": false,
+                      "source_raw_zone": "mx",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_DD02L",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "brz_maz_tech_sap_pr0",
+                      "target_table": "mx_dd02l",
+                      "target_zone": "maz"
+                    },
+                    "load_to_silver": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+                      "additional_parameters": {
+                        "enable_change_data_feed": "true"
+                      },
+                      "column_mapping": [
+                        {
+                          "source_column_name": "tabname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4local",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4vers",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "tabclass",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "sqltab",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "datmin",
+                          "target_data_type": "bigint"
+                        },
+                        {
+                          "source_column_name": "datmax",
+                          "target_data_type": "bigint"
+                        },
+                        {
+                          "source_column_name": "datavg",
+                          "target_data_type": "bigint"
+                        },
+                        {
+                          "source_column_name": "clidep",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "buffered",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "comprflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "langdep",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "actflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "applclass",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "authclass",
+                          "target_data_type": "tinyint"
+                        },
+                        {
+                          "source_column_name": "as4user",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4date",
+                          "target_data_type": "date",
+                          "date_format": "yyyy-MM-dd"
+                        },
+                        {
+                          "source_column_name": "as4time",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "masterlang",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "mainflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "contflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "reservetab",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "globalflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "prozpuff",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "viewclass",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "viewgrant",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "multiplex",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "shlpexi",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "proxytype",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "exclass",
+                          "target_data_type": "tinyint"
+                        },
+                        {
+                          "source_column_name": "wrongcl",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "header__change_seq",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "op_ind",
+                          "target_data_type": "string"
+                        }
+                      ],
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "key_columns": [
+                        "tabname",
+                        "as4local",
+                        "as4vers"
+                      ],
+                      "load_type": "UPSERT",
+                      "partition_columns": [],
+                      "reset_stream_checkpoint": false,
+                      "source_database": "brz_maz_tech_sap_pr0",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_dd02l",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "slv_maz_tech_sap_pr0",
+                      "target_table": "mx_dd02l",
+                      "target_zone": "maz",
+                      "watermark_column": [
+                        "source_commit_ts",
+                        "header__change_seq"
+                      ]
+                    }
+                  },
+                  {
+                    "load_to_bronze": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+                      "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "reset_stream_checkpoint": false,
+                      "source_raw_zone": "mx",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_DD03L",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "brz_maz_tech_sap_pr0",
+                      "target_table": "mx_dd03l",
+                      "target_zone": "maz"
+                    },
+                    "load_to_silver": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+                      "additional_parameters": {
+                        "enable_change_data_feed": "true"
+                      },
+                      "column_mapping": [
+                        {
+                          "source_column_name": "tabname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "fieldname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4local",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4vers",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "position",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "keyflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "mandatory",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "rollname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "checktable",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "adminfield",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "inttype",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "intlen",
+                          "target_data_type": "int"
+                        },
+                        {
+                          "source_column_name": "reftable",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "precfield",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "reffield",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "conrout",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "notnull",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "datatype",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "leng",
+                          "target_data_type": "int"
+                        },
+                        {
+                          "source_column_name": "decimals",
+                          "target_data_type": "int"
+                        },
+                        {
+                          "source_column_name": "domname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "shlporigin",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "tabletype",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "depth",
+                          "target_data_type": "tinyint"
+                        },
+                        {
+                          "source_column_name": "comptype",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "reftype",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "languflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "dbposition",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "anonymous",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "outputstyle",
+                          "target_data_type": "tinyint"
+                        },
+                        {
+                          "source_column_name": "source_commit_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "header__change_seq",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "op_ind",
+                          "target_data_type": "string"
+                        }
+                      ],
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "key_columns": [
+                        "tabname",
+                        "fieldname",
+                        "as4local",
+                        "as4vers",
+                        "position"
+                      ],
+                      "load_type": "UPSERT",
+                      "partition_columns": [],
+                      "reset_stream_checkpoint": false,
+                      "source_database": "brz_maz_tech_sap_pr0",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_dd03l",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "slv_maz_tech_sap_pr0",
+                      "target_table": "mx_dd03l",
+                      "target_zone": "maz",
+                      "watermark_column": [
+                        "source_commit_ts",
+                        "header__change_seq"
+                      ]
+                    }
+                  },
+                  {
+                    "load_to_bronze": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+                      "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "reset_stream_checkpoint": false,
+                      "source_raw_zone": "mx",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_DD04T",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "brz_maz_tech_sap_pr0",
+                      "target_table": "mx_dd04t",
+                      "target_zone": "maz"
+                    },
+                    "load_to_silver": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+                      "additional_parameters": {
+                        "enable_change_data_feed": "true"
+                      },
+                      "column_mapping": [
+                        {
+                          "source_column_name": "rollname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "ddlanguage",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4local",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4vers",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "ddtext",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "reptext",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "scrtext_s",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "scrtext_m",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "scrtext_l",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "header__change_seq",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "op_ind",
+                          "target_data_type": "string"
+                        }
+                      ],
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "key_columns": [
+                        "rollname",
+                        "ddlanguage",
+                        "as4local",
+                        "as4vers"
+                      ],
+                      "load_type": "UPSERT",
+                      "partition_columns": [],
+                      "reset_stream_checkpoint": false,
+                      "source_database": "brz_maz_tech_sap_pr0",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_dd04t",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "slv_maz_tech_sap_pr0",
+                      "target_table": "mx_dd04t",
+                      "target_zone": "maz",
+                      "watermark_column": [
+                        "source_commit_ts",
+                        "header__change_seq"
+                      ]
+                    }
+                  },
+                  {
+                    "load_to_bronze": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+                      "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "reset_stream_checkpoint": false,
+                      "source_raw_zone": "mx",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_DD08L",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "brz_maz_tech_sap_pr0",
+                      "target_table": "mx_dd08l",
+                      "target_zone": "maz"
+                    },
+                    "load_to_silver": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+                      "additional_parameters": {
+                        "enable_change_data_feed": "true"
+                      },
+                      "column_mapping": [
+                        {
+                          "source_column_name": "tabname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "fieldname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4local",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4vers",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "checktable",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "frkart",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "clasfield",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "clasvalue",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "cardleft",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "card",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "checkflag",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "arbgb",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "msgnr",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "noinherit",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "header__change_seq",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "op_ind",
+                          "target_data_type": "string"
+                        }
+                      ],
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "key_columns": [
+                        "tabname",
+                        "fieldname",
+                        "as4local",
+                        "as4vers"
+                      ],
+                      "load_type": "UPSERT",
+                      "partition_columns": [],
+                      "reset_stream_checkpoint": false,
+                      "source_database": "brz_maz_tech_sap_pr0",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_dd08l",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "slv_maz_tech_sap_pr0",
+                      "target_table": "mx_dd08l",
+                      "target_zone": "maz",
+                      "watermark_column": [
+                        "source_commit_ts",
+                        "header__change_seq"
+                      ]
+                    }
+                  },
+                  {
+                    "load_to_bronze": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+                      "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "reset_stream_checkpoint": false,
+                      "source_raw_zone": "mx",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_DD02T",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "brz_maz_tech_sap_pr0",
+                      "target_table": "mx_dd02t",
+                      "target_zone": "maz"
+                    },
+                    "load_to_silver": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+                      "additional_parameters": {
+                        "enable_change_data_feed": "true"
+                      },
+                      "column_mapping": [
+                        {
+                          "source_column_name": "tabname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "ddlanguage",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4local",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4vers",
+                          "target_data_type": "smallint"
+                        },
+                        {
+                          "source_column_name": "ddtext",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "header__change_seq",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "op_ind",
+                          "target_data_type": "string"
+                        }
+                      ],
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "key_columns": [
+                        "tabname",
+                        "ddlanguage",
+                        "as4local",
+                        "as4vers"
+                      ],
+                      "load_type": "UPSERT",
+                      "partition_columns": [],
+                      "reset_stream_checkpoint": false,
+                      "source_database": "brz_maz_tech_sap_pr0",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_dd02t",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "slv_maz_tech_sap_pr0",
+                      "target_table": "mx_dd02t",
+                      "target_zone": "maz",
+                      "watermark_column": [
+                        "source_commit_ts",
+                        "header__change_seq"
+                      ]
+                    }
+                  },
+                  {
+                    "load_to_bronze": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+                      "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "reset_stream_checkpoint": false,
+                      "source_raw_zone": "mx",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_DD03T",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "brz_maz_tech_sap_pr0",
+                      "target_table": "mx_dd03t",
+                      "target_zone": "maz"
+                    },
+                    "load_to_silver": {
+                      "adb_brewdat_library_version": "v1.1.5",
+                      "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+                      "additional_parameters": {
+                        "enable_change_data_feed": "true"
+                      },
+                      "column_mapping": [
+                        {
+                          "source_column_name": "tabname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "ddlanguage",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "as4local",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "fieldname",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "ddtext",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_ts",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "source_commit_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "target_apply_dt",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "header__change_seq",
+                          "target_data_type": "string"
+                        },
+                        {
+                          "source_column_name": "op_ind",
+                          "target_data_type": "string"
+                        }
+                      ],
+                      "incremental_load": true,
+                      "is_enabled": true,
+                      "key_columns": [
+                        "tabname",
+                        "ddlanguage",
+                        "as4local",
+                        "fieldname"
+                      ],
+                      "load_type": "UPSERT",
+                      "partition_columns": [],
+                      "reset_stream_checkpoint": false,
+                      "source_database": "brz_maz_tech_sap_pr0",
+                      "source_system": "sap_pr0",
+                      "source_system_raw": "sap_pr0",
+                      "source_system_zone": "maz",
+                      "source_system_country": "mx",
+                      "source_table": "mx_dd03t",
+                      "target_business_domain": "tech",
+                      "target_business_subdomain": "metadata",
+                      "target_database": "slv_maz_tech_sap_pr0",
+                      "target_table": "mx_dd03t",
+                      "target_zone": "maz",
+                      "watermark_column": [
+                        "source_commit_ts",
+                        "header__change_seq"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "type": "ScheduleTrigger",
+        "typeProperties": {
+          "recurrence": {
+            "frequency": "Day",
+            "interval": 1,
+            "startTime": "2024-02-27T06:15:00",
+            "timeZone": "Central Standard Time (Mexico)",
+            "schedule": {
+              "minutes": [
+                0
+              ],
+              "hours": [
+                5
+              ]
+            }
+          }
+        }
+      }
+    },
+    "pipeline_json": {
+      "name": "slv_maz_tech_sap_pr0_mx_d",
+      "properties": {
+        "activities": [
+          {
+            "name": "Process batch",
+            "type": "ExecutePipeline",
+            "dependsOn": [],
+            "policy": {
+              "secureInput": false
+            },
+            "userProperties": [],
+            "typeProperties": {
+              "pipeline": {
+                "referenceName": "pl_generic_batch_source_to_silver_parent_v0_6_0",
+                "type": "PipelineReference"
+              },
+              "waitOnCompletion": true,
+              "parameters": {
+                "items_to_process": {
+                  "value": "@pipeline().parameters.items_to_process",
+                  "type": "Expression"
+                },
+                "default_parameters_per_environment": {
+                  "value": "@pipeline().globalParameters.default_parameters_per_environment",
+                  "type": "Expression"
+                },
+                "batch_name": {
+                  "value": "@pipeline().parameters.batch_name",
+                  "type": "Expression"
+                },
+                "batch_run_id": {
+                  "value": "@coalesce(\n    pipeline().parameters.batch_run_id,\n    pipeline().GroupId\n)",
+                  "type": "Expression"
+                },
+                "data_interval_start": {
+                  "value": "@pipeline().parameters.data_interval_start",
+                  "type": "Expression"
+                },
+                "data_interval_end": {
+                  "value": "@pipeline().parameters.data_interval_end",
+                  "type": "Expression"
+                }
+              }
+            }
+          },
+          {
+            "name": "If Condition - Checks",
+            "type": "IfCondition",
+            "dependsOn": [
+              {
+                "activity": "Process batch",
+                "dependencyConditions": [
+                  "Succeeded"
+                ]
+              }
+            ],
+            "userProperties": [],
+            "typeProperties": {
+              "expression": {
+                "value": "@not(equals(pipeline().globalParameters.environment,'prod'))",
+                "type": "Expression"
+              },
+              "ifTrueActivities": [
+                {
+                  "name": "pl_generic_run_checks",
+                  "type": "ExecutePipeline",
+                  "dependsOn": [],
+                  "policy": {
+                    "secureInput": false
+                  },
+                  "userProperties": [],
+                  "typeProperties": {
+                    "pipeline": {
+                      "referenceName": "pl_generic_run_checks",
+                      "type": "PipelineReference"
+                    },
+                    "waitOnCompletion": true,
+                    "parameters": {
+                      "default_parameters": {
+                        "value": "@json(string(pipeline().globalParameters.default_parameters_per_environment))[pipeline().globalParameters.environment]",
+                        "type": "Expression"
+                      },
+                      "path": {
+                        "value": "/Workspace/Repos/Quality/Brewdat-maz-maz-framework-templates-repo/Quality_Automates/Quality_Automates/Validations_tables_silver_sap",
+                        "type": "Expression"
+                      },
+                      "trigger_name": {
+                        "value": "@coalesce(\n    pipeline().parameters.trigger_name\n    ,pipeline().TriggerName\n)",
+                        "type": "Expression"
+                      },
+                      "items_to_process": {
+                        "value": "@json(string(pipeline().parameters.items_to_process))",
+                        "type": "Expression"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "policy": {
+          "elapsedTimeMetric": {
+            "duration": "0.03:00:00"
+          }
+        },
+        "parameters": {
+          "items_to_process": {
+            "type": "object"
+          },
+          "default_parameters_per_environment": {
+            "type": "object"
+          },
+          "batch_name": {
+            "type": "string"
+          },
+          "batch_run_id": {
+            "type": "string"
+          },
+          "data_interval_start": {
+            "type": "string"
+          },
+          "data_interval_end": {
+            "type": "string"
+          },
+          "trigger_name": {
+            "type": "string"
+          }
+        },
+        "folder": {
+          "name": "integration"
+        },
+        "annotations": [],
+        "lastPublishTime": "2023-03-16T11:15:31Z"
+      },
+      "type": "Microsoft.DataFactory/factories/pipelines"
+    },
+    "global_parameters": {
+      "name": "brewdat-maz-maz-tech-sap-adf-d",
+      "properties": {
+        "globalParameters": {
+          "environment": {
+            "type": "string",
+            "value": "dev"
+          },
+          "adf_subscription_id": {
+            "type": "string",
+            "value": "44539086-eef9-4144-acc8-997951055e9d"
+          },
+          "adf_resource_group": {
+            "type": "string",
+            "value": "GLOBAL-BREWDAT-MAZ-MAZ-TECH-SAP-RG-DEV"
+          },
+          "catalog_name": {
+            "type": "string",
+            "value": "brewdat_uc_maz_dev"
+          },
+          "default_parameters_per_environment": {
+            "type": "object",
+            "value": {
+              "dev": {
+                "abc_db_name": "edhframeworksdb",
+                "abc_db_pw_secret_name": "edhframeworksdb-sqldbdevuser-csa-maz-maz-tech-sap-rw",
+                "abc_dbserver_name": "edhazuredbgbdev",
+                "abc_user_name": "sqldbdevuser_csa_maz_maz_tech_sap_rw",
+                "adb_cluster_id": "1",
+                "adb_cluster_version": "13.3.x-scala2.12",
+                "adb_driver_node_type": "Standard_DS3_v2",
+                "adb_hive_metastore_connection_string": "jdbc:sqlserver://brewdatazrsqlservernonprod.database.windows.net:1433;database=brewdatunifiedmetastoredbdev;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=90;",
+                "adb_hive_metastore_password": "{{secrets/brewdatmazmaztechakvd/sqldbdevuser-unifmstore-maz-rw}}",
+                "adb_hive_metastore_username": "sqldbdevuser_unifmstore_maz_rw",
+                "adb_num_workers": "1:2",
+                "adb_spot_vm_policy_id": "306483B2F700135B",
+                "adb_worker_node_type": "Standard_DS3_v2",
+                "adb_workspace_resource_id": "/subscriptions/44539086-eef9-4144-acc8-997951055e9d/resourceGroups/GLOBAL-BREWDAT-MAZ-MAZ-TECH-RG-DEV/providers/Microsoft.Databricks/workspaces/brewdat-maz-maz-tech-adbwks-d",
+                "adb_workspace_url": "https://adb-1014222857591080.0.azuredatabricks.net",
+                "project_business_domain": "tech",
+                "project_name": "maz-maz-tech-sap",
+                "project_zone": "maz",
+                "source_akv_name": "brewdatmazmaztechakvd",
+                "source_system_country": "mx",
+                "target_akv_name": "brewdatmazmaztechakvd",
+                "target_spn_client_id": "aab8d7a0-a542-4bd9-bb5a-97053d2b7988",
+                "target_spn_secret_name": "brewdat-spn-maz-maz-tech-sap-rw-d",
+                "target_spn_tenant_id": "cef04b19-7776-4a94-b89b-375c77a8f936",
+                "target_storage_account_name": "brewdatmazrawbrzd"
+              },
+              "qa": {
+                "abc_db_name": "edhframeworksdb",
+                "abc_db_pw_secret_name": "edhframeworksdb-sqldbqauser-csa-maz-maz-tech-sap-rw",
+                "abc_dbserver_name": "edhazuredbgbqa",
+                "abc_user_name": "sqldbqauser_csa_maz_maz_tech_sap_rw",
+                "adb_cluster_id": "1",
+                "adb_cluster_version": "13.3.x-scala2.12",
+                "adb_driver_node_type": "Standard_DS3_v2",
+                "adb_hive_metastore_connection_string": "jdbc:sqlserver://brewdatazrsqlservernonprod.database.windows.net:1433;database=brewdatunifiedmetastoredbqa;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=90;",
+                "adb_hive_metastore_password": "{{secrets/brewdatmazmaztechakvq/sqldbqauser-unifmstore-maz-rw}}",
+                "adb_hive_metastore_username": "sqldbqauser_unifmstore_maz_rw",
+                "adb_num_workers": "1:2",
+                "adb_spot_vm_policy_id": "306483B2F70013DE",
+                "adb_worker_node_type": "Standard_DS3_v2",
+                "adb_workspace_resource_id": "/subscriptions/6896ad40-9e8b-4534-a277-882e70c0edb2/resourceGroups/GLOBAL-BREWDAT-MAZ-MAZ-TECH-RG-QA/providers/Microsoft.Databricks/workspaces/brewdat-maz-maz-tech-adbwks-q",
+                "adb_workspace_url": "https://adb-1081050661797872.12.azuredatabricks.net",
+                "project_business_domain": "tech",
+                "project_name": "maz-maz-tech-sap",
+                "project_zone": "maz",
+                "source_akv_name": "brewdatmazmaztechakvq",
+                "source_system_country": "mx",
+                "target_akv_name": "brewdatmazmaztechakvq",
+                "target_spn_client_id": "ccf72835-4a08-4ce5-8e4b-6ea9d588ed97",
+                "target_spn_secret_name": "brewdat-spn-maz-maz-tech-sap-rw-q",
+                "target_spn_tenant_id": "cef04b19-7776-4a94-b89b-375c77a8f936",
+                "target_storage_account_name": "brewdatmazrawbrzq"
+              },
+              "prod": {
+                "abc_db_name": "edhframeworksdb",
+                "abc_db_pw_secret_name": "edhframeworksdb-sqldbproduser-csa-maz-maz-tech-sap-rw",
+                "abc_dbserver_name": "edhserversqlgbprod",
+                "abc_user_name": "sqldbproduser_csa_maz_maz_tech_sap_rw",
+                "adb_cluster_id": "1",
+                "adb_cluster_version": "13.3.x-scala2.12",
+                "adb_driver_node_type": "Standard_DS3_v2",
+                "adb_hive_metastore_connection_string": "jdbc:sqlserver://brewdatazrsqlserverprod01.database.windows.net:1433;database=brewdatunifiedmetastoredbprod;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=90;",
+                "adb_hive_metastore_password": "{{secrets/brewdatmazmaztechakvp/sqldbproduser-unifmstore-maz-rw}}",
+                "adb_hive_metastore_username": "sqldbproduser_unifmstore_maz_rw",
+                "adb_num_workers": "1:2",
+                "adb_spot_vm_policy_id": "306483B2F70013E8",
+                "adb_worker_node_type": "Standard_DS3_v2",
+                "adb_workspace_resource_id": "/subscriptions/6a9afd74-e21a-4f93-b544-67e88d6fa6fb/resourceGroups/GLOBAL-BREWDAT-MAZ-MAZ-TECH-RG-PROD/providers/Microsoft.Databricks/workspaces/brewdat-maz-maz-tech-adbwks-p",
+                "adb_workspace_url": "https://adb-4873649087105788.8.azuredatabricks.net",
+                "project_business_domain": "tech",
+                "project_name": "maz-maz-tech-sap",
+                "project_zone": "maz",
+                "source_akv_name": "brewdatmazmaztechakvp",
+                "source_system_country": "mx",
+                "target_akv_name": "brewdatmazmaztechakvp",
+                "target_spn_client_id": "d4141c26-4865-45ad-8ca5-1d90bcbcbbff",
+                "target_spn_secret_name": "brewdat-spn-maz-maz-tech-sap-rw-p",
+                "target_spn_tenant_id": "cef04b19-7776-4a94-b89b-375c77a8f936",
+                "target_storage_account_name": "brewdatmazrawbrzp"
+              }
+            }
+          },
+          "default_parameters_fi": {
+            "type": "object",
+            "value": {
+              "dev": {
+                "abc_db_name": "edhframeworksdb",
+                "abc_db_pw_secret_name": "edhframeworksdb-sqldbdevuser-csa-maz-maz-tech-sap-rw",
+                "abc_dbserver_name": "edhazuredbgbdev",
+                "abc_user_name": "sqldbdevuser_csa_maz_maz_tech_sap_rw",
+                "adb_cluster_id": "1",
+                "adb_cluster_version": "13.3.x-scala2.12",
+                "adb_driver_node_type": "Standard_DS3_v2",
+                "adb_hive_metastore_connection_string": "jdbc:sqlserver://brewdatazrsqlservernonprod.database.windows.net:1433;database=brewdatunifiedmetastoredbdev;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=90;",
+                "adb_hive_metastore_password": "{{secrets/brewdatmazmaztechakvd/sqldbdevuser-unifmstore-maz-rw}}",
+                "adb_hive_metastore_username": "sqldbdevuser_unifmstore_maz_rw",
+                "adb_num_workers": "1:2",
+                "adb_spot_vm_policy_id": "306483B2F700135B",
+                "adb_worker_node_type": "Standard_DS3_v2",
+                "adb_workspace_resource_id": "/subscriptions/44539086-eef9-4144-acc8-997951055e9d/resourceGroups/GLOBAL-BREWDAT-MAZ-MAZ-TECH-RG-DEV/providers/Microsoft.Databricks/workspaces/brewdat-maz-maz-tech-adbwks-d",
+                "adb_workspace_url": "https://adb-1014222857591080.0.azuredatabricks.net",
+                "project_business_domain": "tech",
+                "project_name": "maz-maz-tech-sap",
+                "project_zone": "maz",
+                "source_akv_name": "brewdatmazmaztechakvd",
+                "source_system_country": "mx",
+                "target_akv_name": "brewdatmazmaztechakvd",
+                "target_spn_client_id": "aab8d7a0-a542-4bd9-bb5a-97053d2b7988",
+                "target_spn_secret_name": "brewdat-spn-maz-maz-tech-sap-rw-d",
+                "target_spn_tenant_id": "cef04b19-7776-4a94-b89b-375c77a8f936",
+                "target_storage_account_name": "brewdatmazrawbrzd"
+              },
+              "qa": {
+                "abc_db_name": "edhframeworksdb",
+                "abc_db_pw_secret_name": "edhframeworksdb-sqldbqauser-csa-maz-maz-tech-sap-rw",
+                "abc_dbserver_name": "edhazuredbgbqa",
+                "abc_user_name": "sqldbqauser_csa_maz_maz_tech_sap_rw",
+                "adb_cluster_id": "1",
+                "adb_cluster_version": "13.3.x-scala2.12",
+                "adb_driver_node_type": "Standard_DS3_v2",
+                "adb_hive_metastore_connection_string": "jdbc:sqlserver://brewdatazrsqlservernonprod.database.windows.net:1433;database=brewdatunifiedmetastoredbqa;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=90;",
+                "adb_hive_metastore_password": "{{secrets/brewdatmazmaztechakvq/sqldbqauser-unifmstore-maz-rw}}",
+                "adb_hive_metastore_username": "sqldbqauser_unifmstore_maz_rw",
+                "adb_num_workers": "1:2",
+                "adb_spot_vm_policy_id": "306483B2F70013DE",
+                "adb_worker_node_type": "Standard_DS3_v2",
+                "adb_workspace_resource_id": "/subscriptions/6896ad40-9e8b-4534-a277-882e70c0edb2/resourceGroups/GLOBAL-BREWDAT-MAZ-MAZ-TECH-RG-QA/providers/Microsoft.Databricks/workspaces/brewdat-maz-maz-tech-adbwks-q",
+                "adb_workspace_url": "https://adb-1081050661797872.12.azuredatabricks.net",
+                "project_business_domain": "tech",
+                "project_name": "maz-maz-tech-sap",
+                "project_zone": "maz",
+                "source_akv_name": "brewdatmazmaztechakvq",
+                "source_system_country": "mx",
+                "target_akv_name": "brewdatmazmaztechakvq",
+                "target_spn_client_id": "ccf72835-4a08-4ce5-8e4b-6ea9d588ed97",
+                "target_spn_secret_name": "brewdat-spn-maz-maz-tech-sap-rw-q",
+                "target_spn_tenant_id": "cef04b19-7776-4a94-b89b-375c77a8f936",
+                "target_storage_account_name": "brewdatmazrawbrzq"
+              },
+              "prod": {
+                "abc_db_name": "edhframeworksdb",
+                "abc_db_pw_secret_name": "edhframeworksdb-sqldbproduser-csa-maz-maz-tech-sap-rw",
+                "abc_dbserver_name": "edhserversqlgbprod",
+                "abc_user_name": "sqldbproduser_csa_maz_maz_tech_sap_rw",
+                "adb_cluster_id": "1",
+                "adb_cluster_version": "13.3.x-scala2.12",
+                "adb_driver_node_type": "Standard_DS3_v2",
+                "adb_hive_metastore_connection_string": "jdbc:sqlserver://brewdatazrsqlserverprod01.database.windows.net:1433;database=brewdatunifiedmetastoredbprod;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=90;",
+                "adb_hive_metastore_password": "{{secrets/brewdatmazmaztechakvp/sqldbproduser-unifmstore-maz-rw}}",
+                "adb_hive_metastore_username": "sqldbproduser_unifmstore_maz_rw",
+                "adb_num_workers": "1:2",
+                "adb_spot_vm_policy_id": "306483B2F70013E8",
+                "adb_worker_node_type": "Standard_DS3_v2",
+                "adb_workspace_resource_id": "/subscriptions/6a9afd74-e21a-4f93-b544-67e88d6fa6fb/resourceGroups/GLOBAL-BREWDAT-MAZ-MAZ-TECH-RG-PROD/providers/Microsoft.Databricks/workspaces/brewdat-maz-maz-tech-adbwks-p",
+                "adb_workspace_url": "https://adb-4873649087105788.8.azuredatabricks.net",
+                "project_business_domain": "tech",
+                "project_name": "maz-maz-tech-sap",
+                "project_zone": "maz",
+                "source_akv_name": "brewdatmazmaztechakvp",
+                "source_system_country": "mx",
+                "target_akv_name": "brewdatmazmaztechakvp",
+                "target_spn_client_id": "d4141c26-4865-45ad-8ca5-1d90bcbcbbff",
+                "target_spn_secret_name": "brewdat-spn-maz-maz-tech-sap-rw-p",
+                "target_spn_tenant_id": "cef04b19-7776-4a94-b89b-375c77a8f936",
+                "target_storage_account_name": "brewdatmazrawbrzp"
+              }
+            }
+          }
+        }
+      },
+      "location": "westeurope"
+    },
+    "items": [
+      {
+        "table_name": "mx_dd02l",
+        "bronze_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+          "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+          "incremental_load": true,
+          "is_enabled": true,
+          "reset_stream_checkpoint": false,
+          "source_raw_zone": "mx",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_DD02L",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "brz_maz_tech_sap_pr0",
+          "target_table": "mx_dd02l",
+          "target_zone": "maz"
+        },
+        "silver_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+          "additional_parameters": {
+            "enable_change_data_feed": "true"
+          },
+          "column_mapping": [
+            {
+              "source_column_name": "tabname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4local",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4vers",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "tabclass",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "sqltab",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "datmin",
+              "target_data_type": "bigint"
+            },
+            {
+              "source_column_name": "datmax",
+              "target_data_type": "bigint"
+            },
+            {
+              "source_column_name": "datavg",
+              "target_data_type": "bigint"
+            },
+            {
+              "source_column_name": "clidep",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "buffered",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "comprflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "langdep",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "actflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "applclass",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "authclass",
+              "target_data_type": "tinyint"
+            },
+            {
+              "source_column_name": "as4user",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4date",
+              "target_data_type": "date",
+              "date_format": "yyyy-MM-dd"
+            },
+            {
+              "source_column_name": "as4time",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "masterlang",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "mainflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "contflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "reservetab",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "globalflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "prozpuff",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "viewclass",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "viewgrant",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "multiplex",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "shlpexi",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "proxytype",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "exclass",
+              "target_data_type": "tinyint"
+            },
+            {
+              "source_column_name": "wrongcl",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "header__change_seq",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "op_ind",
+              "target_data_type": "string"
+            }
+          ],
+          "incremental_load": true,
+          "is_enabled": true,
+          "key_columns": [
+            "tabname",
+            "as4local",
+            "as4vers"
+          ],
+          "load_type": "UPSERT",
+          "partition_columns": [],
+          "reset_stream_checkpoint": false,
+          "source_database": "brz_maz_tech_sap_pr0",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_dd02l",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "slv_maz_tech_sap_pr0",
+          "target_table": "mx_dd02l",
+          "target_zone": "maz",
+          "watermark_column": [
+            "source_commit_ts",
+            "header__change_seq"
+          ]
+        },
+        "notebook_path_brz": "data_integration/sap_pr0/load_brz_generic_parquet.py",
+        "notebook_path_slv": "data_integration/sap_pr0/load_slv_generic_parquet.py",
+        "governance_path": "src/maz/maz/tech/sap_pr0/dq_definitions/mx/slv_maz_tech_sap_pr0/mx_dd02l.yaml"
+      },
+      {
+        "table_name": "mx_dd03l",
+        "bronze_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+          "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+          "incremental_load": true,
+          "is_enabled": true,
+          "reset_stream_checkpoint": false,
+          "source_raw_zone": "mx",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_DD03L",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "brz_maz_tech_sap_pr0",
+          "target_table": "mx_dd03l",
+          "target_zone": "maz"
+        },
+        "silver_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+          "additional_parameters": {
+            "enable_change_data_feed": "true"
+          },
+          "column_mapping": [
+            {
+              "source_column_name": "tabname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "fieldname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4local",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4vers",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "position",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "keyflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "mandatory",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "rollname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "checktable",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "adminfield",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "inttype",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "intlen",
+              "target_data_type": "int"
+            },
+            {
+              "source_column_name": "reftable",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "precfield",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "reffield",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "conrout",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "notnull",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "datatype",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "leng",
+              "target_data_type": "int"
+            },
+            {
+              "source_column_name": "decimals",
+              "target_data_type": "int"
+            },
+            {
+              "source_column_name": "domname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "shlporigin",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "tabletype",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "depth",
+              "target_data_type": "tinyint"
+            },
+            {
+              "source_column_name": "comptype",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "reftype",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "languflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "dbposition",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "anonymous",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "outputstyle",
+              "target_data_type": "tinyint"
+            },
+            {
+              "source_column_name": "source_commit_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "header__change_seq",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "op_ind",
+              "target_data_type": "string"
+            }
+          ],
+          "incremental_load": true,
+          "is_enabled": true,
+          "key_columns": [
+            "tabname",
+            "fieldname",
+            "as4local",
+            "as4vers",
+            "position"
+          ],
+          "load_type": "UPSERT",
+          "partition_columns": [],
+          "reset_stream_checkpoint": false,
+          "source_database": "brz_maz_tech_sap_pr0",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_dd03l",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "slv_maz_tech_sap_pr0",
+          "target_table": "mx_dd03l",
+          "target_zone": "maz",
+          "watermark_column": [
+            "source_commit_ts",
+            "header__change_seq"
+          ]
+        },
+        "notebook_path_brz": "data_integration/sap_pr0/load_brz_generic_parquet.py",
+        "notebook_path_slv": "data_integration/sap_pr0/load_slv_generic_parquet.py",
+        "governance_path": "src/maz/maz/tech/sap_pr0/dq_definitions/mx/slv_maz_tech_sap_pr0/mx_dd03l.yaml"
+      },
+      {
+        "table_name": "mx_dd04t",
+        "bronze_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+          "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+          "incremental_load": true,
+          "is_enabled": true,
+          "reset_stream_checkpoint": false,
+          "source_raw_zone": "mx",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_DD04T",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "brz_maz_tech_sap_pr0",
+          "target_table": "mx_dd04t",
+          "target_zone": "maz"
+        },
+        "silver_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+          "additional_parameters": {
+            "enable_change_data_feed": "true"
+          },
+          "column_mapping": [
+            {
+              "source_column_name": "rollname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "ddlanguage",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4local",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4vers",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "ddtext",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "reptext",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "scrtext_s",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "scrtext_m",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "scrtext_l",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "header__change_seq",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "op_ind",
+              "target_data_type": "string"
+            }
+          ],
+          "incremental_load": true,
+          "is_enabled": true,
+          "key_columns": [
+            "rollname",
+            "ddlanguage",
+            "as4local",
+            "as4vers"
+          ],
+          "load_type": "UPSERT",
+          "partition_columns": [],
+          "reset_stream_checkpoint": false,
+          "source_database": "brz_maz_tech_sap_pr0",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_dd04t",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "slv_maz_tech_sap_pr0",
+          "target_table": "mx_dd04t",
+          "target_zone": "maz",
+          "watermark_column": [
+            "source_commit_ts",
+            "header__change_seq"
+          ]
+        },
+        "notebook_path_brz": "data_integration/sap_pr0/load_brz_generic_parquet.py",
+        "notebook_path_slv": "data_integration/sap_pr0/load_slv_generic_parquet.py",
+        "governance_path": "src/maz/maz/tech/sap_pr0/dq_definitions/mx/slv_maz_tech_sap_pr0/mx_dd04t.yaml"
+      },
+      {
+        "table_name": "mx_dd08l",
+        "bronze_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+          "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+          "incremental_load": true,
+          "is_enabled": true,
+          "reset_stream_checkpoint": false,
+          "source_raw_zone": "mx",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_DD08L",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "brz_maz_tech_sap_pr0",
+          "target_table": "mx_dd08l",
+          "target_zone": "maz"
+        },
+        "silver_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+          "additional_parameters": {
+            "enable_change_data_feed": "true"
+          },
+          "column_mapping": [
+            {
+              "source_column_name": "tabname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "fieldname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4local",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4vers",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "checktable",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "frkart",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "clasfield",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "clasvalue",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "cardleft",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "card",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "checkflag",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "arbgb",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "msgnr",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "noinherit",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "header__change_seq",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "op_ind",
+              "target_data_type": "string"
+            }
+          ],
+          "incremental_load": true,
+          "is_enabled": true,
+          "key_columns": [
+            "tabname",
+            "fieldname",
+            "as4local",
+            "as4vers"
+          ],
+          "load_type": "UPSERT",
+          "partition_columns": [],
+          "reset_stream_checkpoint": false,
+          "source_database": "brz_maz_tech_sap_pr0",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_dd08l",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "slv_maz_tech_sap_pr0",
+          "target_table": "mx_dd08l",
+          "target_zone": "maz",
+          "watermark_column": [
+            "source_commit_ts",
+            "header__change_seq"
+          ]
+        },
+        "notebook_path_brz": "data_integration/sap_pr0/load_brz_generic_parquet.py",
+        "notebook_path_slv": "data_integration/sap_pr0/load_slv_generic_parquet.py",
+        "governance_path": "src/maz/maz/tech/sap_pr0/dq_definitions/mx/slv_maz_tech_sap_pr0/mx_dd08l.yaml"
+      },
+      {
+        "table_name": "mx_dd02t",
+        "bronze_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+          "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+          "incremental_load": true,
+          "is_enabled": true,
+          "reset_stream_checkpoint": false,
+          "source_raw_zone": "mx",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_DD02T",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "brz_maz_tech_sap_pr0",
+          "target_table": "mx_dd02t",
+          "target_zone": "maz"
+        },
+        "silver_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+          "additional_parameters": {
+            "enable_change_data_feed": "true"
+          },
+          "column_mapping": [
+            {
+              "source_column_name": "tabname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "ddlanguage",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4local",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4vers",
+              "target_data_type": "smallint"
+            },
+            {
+              "source_column_name": "ddtext",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "header__change_seq",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "op_ind",
+              "target_data_type": "string"
+            }
+          ],
+          "incremental_load": true,
+          "is_enabled": true,
+          "key_columns": [
+            "tabname",
+            "ddlanguage",
+            "as4local",
+            "as4vers"
+          ],
+          "load_type": "UPSERT",
+          "partition_columns": [],
+          "reset_stream_checkpoint": false,
+          "source_database": "brz_maz_tech_sap_pr0",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_dd02t",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "slv_maz_tech_sap_pr0",
+          "target_table": "mx_dd02t",
+          "target_zone": "maz",
+          "watermark_column": [
+            "source_commit_ts",
+            "header__change_seq"
+          ]
+        },
+        "notebook_path_brz": "data_integration/sap_pr0/load_brz_generic_parquet.py",
+        "notebook_path_slv": "data_integration/sap_pr0/load_slv_generic_parquet.py",
+        "governance_path": "src/maz/maz/tech/sap_pr0/dq_definitions/mx/slv_maz_tech_sap_pr0/mx_dd02t.yaml"
+      },
+      {
+        "table_name": "mx_dd03t",
+        "bronze_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_brz_generic_parquet",
+          "additional_parameters": " { \"enable_change_data_feed\": true, \"partition_column\": \"\", \"partition_date_format\" : \"yyyyMM\" } ",
+          "incremental_load": true,
+          "is_enabled": true,
+          "reset_stream_checkpoint": false,
+          "source_raw_zone": "mx",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_DD03T",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "brz_maz_tech_sap_pr0",
+          "target_table": "mx_dd03t",
+          "target_zone": "maz"
+        },
+        "silver_config": {
+          "adb_brewdat_library_version": "v1.1.5",
+          "adb_notebook_path": "//brewdat-maz-maz-tech-sap-repo-adb/data_integration/sap_pr0/load_slv_generic_parquet",
+          "additional_parameters": {
+            "enable_change_data_feed": "true"
+          },
+          "column_mapping": [
+            {
+              "source_column_name": "tabname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "ddlanguage",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "as4local",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "fieldname",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "ddtext",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_ts",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "source_commit_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "target_apply_dt",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "header__change_seq",
+              "target_data_type": "string"
+            },
+            {
+              "source_column_name": "op_ind",
+              "target_data_type": "string"
+            }
+          ],
+          "incremental_load": true,
+          "is_enabled": true,
+          "key_columns": [
+            "tabname",
+            "ddlanguage",
+            "as4local",
+            "fieldname"
+          ],
+          "load_type": "UPSERT",
+          "partition_columns": [],
+          "reset_stream_checkpoint": false,
+          "source_database": "brz_maz_tech_sap_pr0",
+          "source_system": "sap_pr0",
+          "source_system_raw": "sap_pr0",
+          "source_system_zone": "maz",
+          "source_system_country": "mx",
+          "source_table": "mx_dd03t",
+          "target_business_domain": "tech",
+          "target_business_subdomain": "metadata",
+          "target_database": "slv_maz_tech_sap_pr0",
+          "target_table": "mx_dd03t",
+          "target_zone": "maz",
+          "watermark_column": [
+            "source_commit_ts",
+            "header__change_seq"
+          ]
+        },
+        "notebook_path_brz": "data_integration/sap_pr0/load_brz_generic_parquet.py",
+        "notebook_path_slv": "data_integration/sap_pr0/load_slv_generic_parquet.py",
+        "governance_path": "src/maz/maz/tech/sap_pr0/dq_definitions/mx/slv_maz_tech_sap_pr0/mx_dd03t.yaml"
+      }
+    ]
+  },
+  "environment_type": "slv",
+  "normalized_schema_v4": {
+    "zone": "maz",
+    "landing_zone": "maz",
+    "domain": "logistics",
+    "pipeline": "test_ingestion_x",
+    "schedule": "* * 2 * *",
+    "table_name": "raw_logistics_orders",
+    "owner": "platform",
+    "connector": "blob",
+    "source_system": "sap-test",
+    "source_entity": "sap-test",
+    "target_entity": "sap-test",
+    "connection_id": "sap-test-secret",
+    "transformations": "",
+    "acl": "yn"
+  },
+  "pipeline_info": {
+    "repo_name": "BrewDat/brewdat-maz-maz-tech-sap-repo-adf",
+    "trigger_name": "tr_slv_maz_tech_metadata_sap_pr0_mx_d_0500"
+  },
+  "template_path": "cache/hopsflow",
+  "validation_output": "Validation Error: [ES0010102] DAG validation error: There were errors in the DAG validation. Please check the logs for more details.\n\n2025-12-05 21:35:49 UTC | \u2139 INFO    | [CLI_PARSING_ARGUMENTS] | File Name: cli.py\n  \u2514\u2500 Arguments: ['ingestion', '--validate-dags']\n2025-12-05 21:35:49 UTC | \u2139 INFO    | [CLI_EXECUTING_COMMAND] | File Name: cli.py\n  \u2514\u2500 Command: ingestion\n2025-12-05 21:35:49 UTC | \u2139 INFO    | [FETCHING_ALL_DAG_DEFINITIONS] | File Name: pipeline_factory.py\n2025-12-05 21:35:49 UTC | \u26a0 WARNING | [ERROR_OCCURRED] | File Name: error_handler.py\n  \u251c\u2500 Error Code: ES0010999\n  \u251c\u2500 Category: VALIDATION\n  \u251c\u2500 Severity: MEDIUM\n  \u251c\u2500 User Message: Internal Error: TypeError\n  \u251c\u2500 Technical Message: TypeError: 'NoneType' object is not iterable\n  \u251c\u2500 Exception Type: TypeError\n  \u251c\u2500 Operation: process_yaml_file\n  \u251c\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dataset/sap_test/sap_test_transformations.yaml\n  \u2514\u2500 Traceback:\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n       \u001b[1mTraceback (most recent call last):\u001b[0m\n       \u001b[1m  File \"/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/.venv/lib/python3.11/site-packages/engineeringstore/infrastructure/service/factory/pipeline_factory/pipeline_factory.py\", line 119, in run\u001b[0m\n       \u001b[1m    key = list(context)[0]\u001b[0m\n       \u001b[1m          ^^^^^^^^^^^^^\u001b[0m\n       \u001b[1mTypeError: 'NoneType' object is not iterable\u001b[0m\n\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n2025-12-05 21:35:49 UTC | \u26a0 WARNING | [ERROR_OCCURRED] | File Name: error_handler.py\n  \u251c\u2500 Error Code: ES0010999\n  \u251c\u2500 Category: VALIDATION\n  \u251c\u2500 Severity: MEDIUM\n  \u251c\u2500 User Message: Internal Error: TypeError\n  \u251c\u2500 Technical Message: TypeError: 'NoneType' object is not iterable\n  \u251c\u2500 Exception Type: TypeError\n  \u251c\u2500 Operation: process_yaml_file\n  \u251c\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dataset/sap_test/sap_test_acl.yaml\n  \u2514\u2500 Traceback:\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n       \u001b[1mTraceback (most recent call last):\u001b[0m\n       \u001b[1m  File \"/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/.venv/lib/python3.11/site-packages/engineeringstore/infrastructure/service/factory/pipeline_factory/pipeline_factory.py\", line 119, in run\u001b[0m\n       \u001b[1m    key = list(context)[0]\u001b[0m\n       \u001b[1m          ^^^^^^^^^^^^^\u001b[0m\n       \u001b[1mTypeError: 'NoneType' object is not iterable\u001b[0m\n\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_BASE_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Yaml Key: public_dag\n  \u251c\u2500 Error Message: must be of boolean type\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: acl\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: metadata\n  \u251c\u2500 Error Message: {'dataexpert': ['null value not allowed'], 'logicalName': ['Null Value Not Allowed'], 'Schema': [{0: [{'Description': ['Null Value Not Allowed'], 'Name': ['Null Value Not Allowed'], 'Type': ['Null Value Not Allowed']}]}]}\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_path\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_type\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_FAILED] | File Name: pipeline_factory.py\n  \u2514\u2500 Yaml File: //Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_BASE_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Yaml Key: public_dag\n  \u251c\u2500 Error Message: must be of boolean type\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: acl\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: metadata\n  \u251c\u2500 Error Message: {'dataexpert': ['null value not allowed'], 'logicalName': ['Null Value Not Allowed'], 'Schema': [{0: [{'Description': ['Null Value Not Allowed'], 'Name': ['Null Value Not Allowed'], 'Type': ['Null Value Not Allowed']}]}]}\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_path\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_type\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_FAILED] | File Name: pipeline_factory.py\n  \u2514\u2500 Yaml File: //Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocEpi\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocAso\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocCid\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocExames\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocGed\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocRiscosGhe\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_FAILED] | File Name: pipeline_factory.py\n  \u2514\u2500 Yaml File: //Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:36:04 UTC | \u2717 ERROR   | [CLI_DAG_VALIDATION_FAILED] | File Name: cli.py\n  \u251c\u2500 Error Message: [ES0010102] DAG validation error: There were errors in the DAG validation. Please check the logs for more details.\n  \u2514\u2500 Command: ingestion\n",
+  "validation_stdout": "Validation Error: [ES0010102] DAG validation error: There were errors in the DAG validation. Please check the logs for more details.\n",
+  "validation_stderr": "2025-12-05 21:35:49 UTC | \u2139 INFO    | [CLI_PARSING_ARGUMENTS] | File Name: cli.py\n  \u2514\u2500 Arguments: ['ingestion', '--validate-dags']\n2025-12-05 21:35:49 UTC | \u2139 INFO    | [CLI_EXECUTING_COMMAND] | File Name: cli.py\n  \u2514\u2500 Command: ingestion\n2025-12-05 21:35:49 UTC | \u2139 INFO    | [FETCHING_ALL_DAG_DEFINITIONS] | File Name: pipeline_factory.py\n2025-12-05 21:35:49 UTC | \u26a0 WARNING | [ERROR_OCCURRED] | File Name: error_handler.py\n  \u251c\u2500 Error Code: ES0010999\n  \u251c\u2500 Category: VALIDATION\n  \u251c\u2500 Severity: MEDIUM\n  \u251c\u2500 User Message: Internal Error: TypeError\n  \u251c\u2500 Technical Message: TypeError: 'NoneType' object is not iterable\n  \u251c\u2500 Exception Type: TypeError\n  \u251c\u2500 Operation: process_yaml_file\n  \u251c\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dataset/sap_test/sap_test_transformations.yaml\n  \u2514\u2500 Traceback:\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n       \u001b[1mTraceback (most recent call last):\u001b[0m\n       \u001b[1m  File \"/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/.venv/lib/python3.11/site-packages/engineeringstore/infrastructure/service/factory/pipeline_factory/pipeline_factory.py\", line 119, in run\u001b[0m\n       \u001b[1m    key = list(context)[0]\u001b[0m\n       \u001b[1m          ^^^^^^^^^^^^^\u001b[0m\n       \u001b[1mTypeError: 'NoneType' object is not iterable\u001b[0m\n\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n2025-12-05 21:35:49 UTC | \u26a0 WARNING | [ERROR_OCCURRED] | File Name: error_handler.py\n  \u251c\u2500 Error Code: ES0010999\n  \u251c\u2500 Category: VALIDATION\n  \u251c\u2500 Severity: MEDIUM\n  \u251c\u2500 User Message: Internal Error: TypeError\n  \u251c\u2500 Technical Message: TypeError: 'NoneType' object is not iterable\n  \u251c\u2500 Exception Type: TypeError\n  \u251c\u2500 Operation: process_yaml_file\n  \u251c\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dataset/sap_test/sap_test_acl.yaml\n  \u2514\u2500 Traceback:\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n       \u001b[1mTraceback (most recent call last):\u001b[0m\n       \u001b[1m  File \"/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/.venv/lib/python3.11/site-packages/engineeringstore/infrastructure/service/factory/pipeline_factory/pipeline_factory.py\", line 119, in run\u001b[0m\n       \u001b[1m    key = list(context)[0]\u001b[0m\n       \u001b[1m          ^^^^^^^^^^^^^\u001b[0m\n       \u001b[1mTypeError: 'NoneType' object is not iterable\u001b[0m\n\n       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_BASE_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Yaml Key: public_dag\n  \u251c\u2500 Error Message: must be of boolean type\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: acl\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: metadata\n  \u251c\u2500 Error Message: {'dataexpert': ['null value not allowed'], 'logicalName': ['Null Value Not Allowed'], 'Schema': [{0: [{'Description': ['Null Value Not Allowed'], 'Name': ['Null Value Not Allowed'], 'Type': ['Null Value Not Allowed']}]}]}\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_path\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_type\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_FAILED] | File Name: pipeline_factory.py\n  \u2514\u2500 Yaml File: //Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_BASE_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Yaml Key: public_dag\n  \u251c\u2500 Error Message: must be of boolean type\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: acl\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: metadata\n  \u251c\u2500 Error Message: {'dataexpert': ['null value not allowed'], 'logicalName': ['Null Value Not Allowed'], 'Schema': [{0: [{'Description': ['Null Value Not Allowed'], 'Name': ['Null Value Not Allowed'], 'Type': ['Null Value Not Allowed']}]}]}\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_path\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: raw_logistics_orders\n  \u251c\u2500 Yaml Key: file_type\n  \u251c\u2500 Error Message: null value not allowed\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:49 UTC | \u2717 ERROR   | [DAG_VALIDATION_FAILED] | File Name: pipeline_factory.py\n  \u2514\u2500 Yaml File: //Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocEpi\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocAso\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocCid\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocExames\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocGed\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_ERROR_TASK_LEVEL] | File Name: pipeline_factory.py\n  \u251c\u2500 Task Name: SocRiscosGhe\n  \u251c\u2500 Yaml Key: connector\n  \u251c\u2500 Error Message: unallowed value socApi\n  \u2514\u2500 Yaml File: /Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:35:59 UTC | \u2717 ERROR   | [DAG_VALIDATION_FAILED] | File Name: pipeline_factory.py\n  \u2514\u2500 Yaml File: //Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml\n2025-12-05 21:36:04 UTC | \u2717 ERROR   | [CLI_DAG_VALIDATION_FAILED] | File Name: cli.py\n  \u251c\u2500 Error Message: [ES0010102] DAG validation error: There were errors in the DAG validation. Please check the logs for more details.\n  \u2514\u2500 Command: ingestion\n",
+  "validation_return_code": 1,
+  "validation_passed": false,
+  "parsed_validation_errors": [
+    {
+      "file_path": "/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_test_ingestion_x.yaml",
+      "file_type": "yaml",
+      "errors": [
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "public_dag",
+          "message": "must be of boolean type",
+          "task_name": null,
+          "tag": "DAG_VALIDATION_ERROR_BASE_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "acl",
+          "message": "null value not allowed",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "metadata",
+          "message": "{'dataexpert': ['null value not allowed'], 'logicalName': ['Null Value Not Allowed'], 'Schema': [{0: [{'Description': ['Null Value Not Allowed'], 'Name': ['Null Value Not Allowed'], 'Type': ['Null Value Not Allowed']}]}]}",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "file_path",
+          "message": "null value not allowed",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "file_type",
+          "message": "null value not allowed",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": null,
+          "message": "DAG validation failed",
+          "task_name": null,
+          "tag": "DAG_VALIDATION_FAILED"
+        }
+      ]
+    },
+    {
+      "file_path": "/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dag/maz_logistics_sap_test_unknown_pipeline.yaml",
+      "file_type": "yaml",
+      "errors": [
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "public_dag",
+          "message": "must be of boolean type",
+          "task_name": null,
+          "tag": "DAG_VALIDATION_ERROR_BASE_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "acl",
+          "message": "null value not allowed",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "metadata",
+          "message": "{'dataexpert': ['null value not allowed'], 'logicalName': ['Null Value Not Allowed'], 'Schema': [{0: [{'Description': ['Null Value Not Allowed'], 'Name': ['Null Value Not Allowed'], 'Type': ['Null Value Not Allowed']}]}]}",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "file_path",
+          "message": "null value not allowed",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "file_type",
+          "message": "null value not allowed",
+          "task_name": "raw_logistics_orders",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": null,
+          "message": "DAG validation failed",
+          "task_name": null,
+          "tag": "DAG_VALIDATION_FAILED"
+        }
+      ]
+    },
+    {
+      "file_path": "/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dataset/sap_test/sap_test_acl.yaml",
+      "file_type": "yaml",
+      "errors": [
+        {
+          "error_code": "ES0010999",
+          "category": "VALIDATION",
+          "severity": "MEDIUM",
+          "yaml_key": null,
+          "message": "TypeError: 'NoneType' object is not iterable",
+          "task_name": null,
+          "tag": "ERROR_OCCURRED"
+        }
+      ]
+    },
+    {
+      "file_path": "/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/maz/sap_test/dataset/sap_test/sap_test_transformations.yaml",
+      "file_type": "yaml",
+      "errors": [
+        {
+          "error_code": "ES0010999",
+          "category": "VALIDATION",
+          "severity": "MEDIUM",
+          "yaml_key": null,
+          "message": "TypeError: 'NoneType' object is not iterable",
+          "task_name": null,
+          "tag": "ERROR_OCCURRED"
+        }
+      ]
+    },
+    {
+      "file_path": "/Users/santiago/Desktop/Ab-Inbev/MLP/maz-anyt-platform-migration-agent/cache/brewdat-pltfrm-ghq-tech-hopsflow/src/saz/br/soc/dag/saz_br_people_soc_reports.yaml",
+      "file_type": "yaml",
+      "errors": [
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "connector",
+          "message": "unallowed value socApi",
+          "task_name": "SocEpi",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "connector",
+          "message": "unallowed value socApi",
+          "task_name": "SocAso",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "connector",
+          "message": "unallowed value socApi",
+          "task_name": "SocCid",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "connector",
+          "message": "unallowed value socApi",
+          "task_name": "SocExames",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "connector",
+          "message": "unallowed value socApi",
+          "task_name": "SocGed",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": "connector",
+          "message": "unallowed value socApi",
+          "task_name": "SocRiscosGhe",
+          "tag": "DAG_VALIDATION_ERROR_TASK_LEVEL"
+        },
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": null,
+          "message": "DAG validation failed",
+          "task_name": null,
+          "tag": "DAG_VALIDATION_FAILED"
+        }
+      ]
+    },
+    {
+      "file_path": "cli.py",
+      "file_type": "py",
+      "errors": [
+        {
+          "error_code": null,
+          "category": null,
+          "severity": null,
+          "yaml_key": null,
+          "message": "[ES0010102] DAG validation error: There were errors in the DAG validation. Please check the logs for more details.",
+          "task_name": null,
+          "tag": "CLI_DAG_VALIDATION_FAILED"
+        }
+      ]
+    }
+  ]
+}
