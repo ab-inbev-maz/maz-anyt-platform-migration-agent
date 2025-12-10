@@ -31,6 +31,7 @@ def main():
     state.update(
         {
             "environment_type": "slv",
+
             "normalized_schema_v4": {
                 "zone": "maz",
                 "landing_zone": "maz",
@@ -44,9 +45,14 @@ def main():
                 "source_entity": "sap-test",
                 "target_entity": "sap-test",
                 "connection_id": "sap-test-secret",
-                "transformations": "",
-                "acl": "yn",
-            },
+                "acl": {"read": ["data_engineering_team"]},
+                "metadata": {"description": "This is a test table for logistics orders."},
+                "notebook": {"path": "/notebooks/logistics_analysis.ipynb"},
+                "observability": {"logging": True, "monitoring": True},
+                "quality": {"rules": []},
+                "sync": {"type": "full"},
+                "transformations": {"steps": []},
+            }
         }
     )
 

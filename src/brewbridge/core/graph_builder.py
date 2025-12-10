@@ -6,6 +6,7 @@ from brewbridge.domain.tools.repo_cloner import repo_cloner
 from brewbridge.domain.tools.set_up import read_manifest_and_check_api
 from brewbridge.domain.tools.signal_extractor import signal_extractor_node
 from brewbridge.domain.tools.template_creator import template_creator
+from brewbridge.domain.tools.yaml_parsers import yaml_parsers
 from brewbridge.domain.tools.validator import validator
 from brewbridge.infrastructure.logger import get_logger
 
@@ -22,6 +23,7 @@ class MigrationGraphBuilder:
         self.nodes["repo_cloner"] = repo_cloner
         self.nodes["template_creator"] = template_creator
         self.nodes["extractor_node"] = extractor_node
+        self.nodes["yaml_parsers"] = yaml_parsers
         self.nodes["validator"] = validator
         self.nodes["signal_extractor_node"] = signal_extractor_node
 
@@ -32,7 +34,8 @@ class MigrationGraphBuilder:
             "repo_cloner": "extractor_node",
             "extractor_node": "signal_extractor_node",
             "signal_extractor_node": "template_creator",
-            "template_creator": "validator",
+            "template_creator": "yaml_parsers",
+            "yaml_parsers": "validator",
             "validator": END,
         }
         return self
