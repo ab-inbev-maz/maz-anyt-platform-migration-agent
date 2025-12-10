@@ -24,6 +24,7 @@ class MigrationGraphState(BaseModel):
     # Existing fields
     environment_type: Optional[str] = Field(default=None)
     normalized_schema_v4: Optional[Dict[str, Any]] = Field(default=None)
+    signal_summary: Optional[Dict[str, Any]] = Field(default=None)
     pipeline_info: Optional[Dict[str, Any]] = Field(default=None)
     template_path: Optional[str] = Field(default=None)
     validation_output: Optional[str] = Field(default=None)

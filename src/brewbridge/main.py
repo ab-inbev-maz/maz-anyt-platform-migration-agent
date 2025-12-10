@@ -39,7 +39,7 @@ def main():
                 "schedule": "* * 2 * *",
                 "table_name": "raw_logistics_orders",
                 "owner": "platform",
-                "connector": "blob",
+                "connector": "a",  # means blob
                 "source_system": "sap-test",
                 "source_entity": "sap-test",
                 "target_entity": "sap-test",
