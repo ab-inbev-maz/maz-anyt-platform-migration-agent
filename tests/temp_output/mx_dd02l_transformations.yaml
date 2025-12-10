@@ -1,0 +1,10 @@
+transformations: []
+sort_by_columns:
+- column: source_commit_ts
+  order: desc
+- column: header__change_seq
+  order: desc
+drop_duplicate:
+  based_on_columns:
+  - MANDT
+  - AUFNR
