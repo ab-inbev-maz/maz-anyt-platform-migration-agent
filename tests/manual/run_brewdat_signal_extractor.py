@@ -16,7 +16,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from brewbridge.domain.extractor_strategies.brewdat.signal_extractor_pipeline import (
+from brewbridge.domain.extractor_strategies.brewdat.signal_extractor_strategy import (
     BrewdatSignalExtractor,
 )  # noqa: E402
 

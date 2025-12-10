@@ -117,9 +117,7 @@ class BrewdatSignalExtractor:
                 zone=zone,
                 domain=domain,
                 source_system_fallback=None,
-                country_fallback=None,
                 raw_artifacts=raw_artifacts,
-                schedule=schedule,
             )
 
             # If silver config exists, mark transformations as "y" and count silver.
@@ -141,9 +139,7 @@ class BrewdatSignalExtractor:
         zone: str,
         domain: str,
         source_system_fallback: Optional[str],
-        country_fallback: Optional[str],
         raw_artifacts: Dict[str, Any],
-        schedule: str,
     ) -> Dict[str, Any]:
         zone_local = cfg.get("target_zone") or zone
         domain_local = self._map_domain(cfg.get("target_business_domain") or domain)
@@ -153,17 +149,10 @@ class BrewdatSignalExtractor:
             or source_system_fallback
             or "unknown_source_system"
         )
-        source_system_country = (
-            cfg.get("source_system_country")
-            or country_fallback
-            or cfg.get("source_raw_zone")
-            or "unknown_country"
-        )
         target_entity = cfg.get("target_table") or "unknown_target_table"
-        source_entity = cfg.get("source_table") or self.default_source_entity
 
         if target_layer == "brz":
-            table_name = f"brz_{zone_local}_{domain_local}_{source_system}_{source_system_country}"
+            table_name = f"{zone_local}_{domain_local}_{source_system}"
         else:
             table_name = cfg.get("target_table") or cfg.get("source_table") or target_entity
 

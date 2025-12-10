@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 from brewbridge.core.base_nodes import tool_node
 from brewbridge.core.state import MigrationGraphState
-from brewbridge.domain.extractor_strategies.brewdat.signal_extractor_pipeline import (
+from brewbridge.domain.extractor_strategies.brewdat.signal_extractor_strategy import (
     BrewdatSignalExtractor,
 )
 from brewbridge.infrastructure.logger import get_logger
