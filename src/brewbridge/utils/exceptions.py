@@ -184,3 +184,12 @@ class DatabricksWarehouseNotRunningError(DatabricksClientError):
     """SQL Warehouse is stopped, starting, or not ready."""
 
     pass
+
+# ============================================================
+# Parser Exceptions
+# ============================================================
+
+class ParserError(BrewBridgeError):
+    """Raised when there is an error parsing a file (e.g., YAML, JSON)."""
+
+    pass
