@@ -69,7 +69,6 @@ class CodeAnalyzer:
         return clean_str
 
     # Métodos Específicos para Hopsflow 
-
     def extract_dedup_keys(self) -> List[str]:
         """Extract columns used for deduplication (key_columns)."""
         val = self.get_widget_value("key_columns")

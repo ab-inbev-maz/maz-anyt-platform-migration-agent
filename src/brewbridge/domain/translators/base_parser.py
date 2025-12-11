@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
-from brewbridge.domain.translators.strategies.hopsflow.yaml_handler import YamlHandler
+from brewbridge.domain.translators.strategies.transformations_parser.yaml_handler import YamlHandler
 from brewbridge.infrastructure.logger import get_logger
 from brewbridge.utils.exceptions import ParserError
 
@@ -28,10 +28,10 @@ class BaseParser(ABC):
 
     def parse(self, target_table: str, template_path: str, output_path: str) -> None:
         """
-        MÉTODO PLANTILLA (Template Method).
-        Define el esqueleto del algoritmo de traducción. Las subclases no deben sobrescribir esto.
+        TEMPLATE METHOD.
+        Defines the skeleton of the translation algorithm. Subclasses should not override this.
         """
-        logger.info(f"⚙️ Iniciando parsing para tabla: {target_table}")
+        logger.info(f" Iniciando parsing para tabla: {target_table}")
 
         # 1. Encontrar la entidad específica en la 'Maleta'
         item = self._find_item(target_table)
@@ -52,20 +52,20 @@ class BaseParser(ABC):
 
         # 5. Escribir el Archivo Final
         YamlHandler.write_yaml(output_path, final_content)
-        logger.info(f"✅ Archivo generado exitosamente: {output_path}")
+        logger.info(f" Archivo generado exitosamente: {output_path}")
 
     @abstractmethod
     def _generate_updates(self, item: Dict[str, Any], template: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Método Abstracto. Debe ser implementado por cada Parser concreto (Transformations, ACL, etc.).
+        Abstract Method. Must be implemented by each concrete Parser (Transformations, ACL, etc.).
         
         Input:
-            - item: El objeto MigrationItem (con configs y rutas).
-            - template: El contenido actual del YAML vacío.
+            - item: The MigrationItem object (with configs and paths).
+            - template: The current content of the empty YAML.
             
         Output:
-            - Un diccionario de actualizaciones usando Dot Notation para anidamiento.
-              Ej: {"transformations.0.name": "limpieza_datos", "checkpoint": True}
+            - A dictionary of updates using Dot Notation for nesting.
+              Ex: {"transformations.0.name": "data_cleaning", "checkpoint": True}
         """
         pass
 
@@ -79,16 +79,16 @@ class BaseParser(ABC):
 
     def _apply_updates(self, content: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Aplica las actualizaciones al diccionario de contenido.
-        Soporta claves anidadas con puntos (ej: 'padre.hijo.nieto').
-        Soporta índices de listas (ej: 'lista.0.campo').
+        Applies updates to the content dictionary.
+        Supports nested keys with dots (e.g., 'parent.child.grandchild').
+        Supports list indices (e.g., 'list.0.field').
         """
         for key_path, value in updates.items():
             self._set_nested_value(content, key_path, value)
         return content
 
     def _set_nested_value(self, data: Any, path: str, value: Any) -> None:
-        """Helper para navegar y setear valores profundos."""
+        """Helper to navigate and set deep values."""
         keys = path.split('.')
         current = data
         
