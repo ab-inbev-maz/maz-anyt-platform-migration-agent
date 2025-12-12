@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from brewbridge.infrastructure import get_logger
+from brewbridge.core.enums import DefaultYAMLConfig
 
 logger = get_logger(__name__)
 
@@ -155,10 +156,15 @@ class BrewdatSignalExtractor:
             table_name = f"{zone_local}_{domain_local}_{source_system}"
         else:
             table_name = cfg.get("target_table") or cfg.get("source_table") or target_entity
-
-        transformations = "y" if target_layer == "slv" else "n"
-        acl = "y" if self._has_access_groups(raw_artifacts) else "n"
         connection_id = self._extract_connection_id(raw_artifacts)
+
+        acl = DefaultYAMLConfig.ACL.value
+        metadata = DefaultYAMLConfig.METADATA.value
+        observability = DefaultYAMLConfig.OBSERVABILITY.value
+        quality = raw_artifacts.get("quality_rules").get(target_entity, {}) if self._has_quality_rules(raw_artifacts, target_entity) else "to be generated via LLM"
+        sync = DefaultYAMLConfig.SYNC.value
+        notebook = "No Notebook Needed for target layer" if target_layer != "gld" else "to be generated via LLM"
+        transformations = DefaultYAMLConfig.TRANSFORMATION.value if target_layer != "slv" else "to be generated via LLM"
 
         return {
             "target_layer": target_layer,
@@ -168,8 +174,13 @@ class BrewdatSignalExtractor:
             "connector": self.default_connector,
             "target_entity": target_entity,
             "connection_id": connection_id,
-            "transformations": transformations,
             "acl": acl,
+            "metadata": metadata,
+            "observability": observability,
+            "quality": quality,
+            "sync": sync,
+            "notebook": notebook,
+            "transformations": transformations,
         }
 
     # ------------------------------------------------------------------ #
@@ -284,4 +295,12 @@ class BrewdatSignalExtractor:
                 return access_groups is not None
         except Exception:
             logger.debug("Could not parse metadata_yaml for access_groups.")
+        return False
+    
+    def _has_quality_rules(self, raw_artifacts: Dict[str, Any], table_name: str) -> bool:
+        try:
+            quality = raw_artifacts.get("quality_rules").get(table_name, {})
+            return quality is not None
+        except Exception:
+            logger.debug("Could not parse quality_rules for Fitness Index.")
         return False
